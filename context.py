@@ -62,6 +62,17 @@ class VisContext(Context):
     def test_labels(self, EPOCH):
         return self.strategy.data_provider.test_labels(EPOCH)
     
+    def suggest_abnormal(self, strategy, acc_idxs, rej_idxs, budget):
+        ntd = self._init_detection()
+        if strategy == "TBSampling":
+            suggest_idxs, scores = ntd.sample_batch_init(acc_idxs, rej_idxs, budget)
+        elif strategy == "Feedback":
+            suggest_idxs, scores = ntd.sample_batch(acc_idxs, rej_idxs, budget)
+        else:
+            raise NotImplementedError
+        suggest_labels = self.clean_labels[suggest_idxs]
+        return suggest_idxs, scores, suggest_labels
+    
 
     #################################################################################################################
     #                                                                                                               #
