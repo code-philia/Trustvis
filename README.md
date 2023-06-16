@@ -19,7 +19,5 @@ This is an interactive and visualized debugging tool for deep classifiers.
 
 ```console
 ~$ python dvi_main.py --content_path /path/to/dataset --epoch_start 19 --epoch_end 20
-~$ cd path/to/GridSkeletonVis
-~$ pip install -r requirements.txt
 ```
 
