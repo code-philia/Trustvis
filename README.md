@@ -8,7 +8,7 @@ This is an interactive and visualized debugging tool for deep classifiers.
 ## Installation
 ```console
 ~$ git clone 
-~$ cd path/to/DeepDebugger
+~$ cd path/to/GridSkeletonVis
 ~$ pip install -r requirements.txt
 ```
 ## Visualize your embedding
