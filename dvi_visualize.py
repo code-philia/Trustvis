@@ -34,8 +34,6 @@ VIS_METHOD = "DVI" # DeepVisualInsight
 ########################################################################################################################
 parser = argparse.ArgumentParser(description='Process hyperparameters...')
 parser.add_argument('--content_path', type=str)
-parser.add_argument('--epoch_start', type=int)
-parser.add_argument('--epoch_end', type=int)
 args = parser.parse_args()
 
 CONTENT_PATH = args.content_path
@@ -56,9 +54,6 @@ GPU_ID = config["GPU"]
 EPOCH_START = config["EPOCH_START"]
 EPOCH_END = config["EPOCH_END"]
 EPOCH_PERIOD = config["EPOCH_PERIOD"]
-
-EPOCH_START = args.epoch_start
-EPOCH_END = args.epoch_end
 
 # Training parameter (subject model)
 TRAINING_PARAMETER = config["TRAINING"]
@@ -92,88 +87,14 @@ net = eval("subject_model.{}()".format(NET))
 ########################################################################################################################
 # Define data_provider
 data_provider = NormalDataProvider(CONTENT_PATH, net, EPOCH_START, EPOCH_END, EPOCH_PERIOD, device=DEVICE, epoch_name='Epoch',classes=CLASSES,verbose=1)
-if PREPROCESS:
-    data_provider._meta_data()
-    if B_N_EPOCHS >0:
-        data_provider._estimate_boundary(LEN//10, l_bound=L_BOUND)
+
 
 # Define visualization models
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
-# Define Losses
-negative_sample_rate = 5
-min_dist = .1
-_a, _b = find_ab_params(1.0, min_dist)
-umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
-recon_loss_fn = ReconstructionLoss(beta=1.0)
-single_loss_fn = SingleVisLoss(umap_loss_fn, recon_loss_fn, lambd=LAMBDA1)
 # Define Projector
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
-start_flag = 1
-prev_model = VisModel(ENCODER_DIMS, DECODER_DIMS)
-
-for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
-    # Define DVI Loss
-    if start_flag:
-        temporal_loss_fn = DummyTemporalLoss(DEVICE)
-        criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
-        start_flag = 0
-    else:
-        # TODO AL mode, redefine train_representation
-        prev_data = data_provider.train_representation(iteration-EPOCH_PERIOD)
-        curr_data = data_provider.train_representation(iteration)
-        npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
-        temporal_loss_fn = TemporalLoss(w_prev, DEVICE)
-        criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=LAMBDA2*npr,device=DEVICE)
-    # Define training parameters
-    optimizer = torch.optim.Adam(model.parameters(), lr=.01, weight_decay=1e-5)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
-    # Define Edge dataset
-    t0 = time.time()
-    spatial_cons = SingleEpochSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
-    edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
-    t1 = time.time()
-
-    probs = probs / (probs.max()+1e-3)
-    eliminate_zeros = probs>5e-2    #1e-3
-    edge_to = edge_to[eliminate_zeros]
-    edge_from = edge_from[eliminate_zeros]
-    probs = probs[eliminate_zeros]
-    
-    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention)
-
-    n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
-    # chose sampler based on the number of dataset
-    if len(edge_to) > pow(2,24):
-        sampler = CustomWeightedRandomSampler(probs, n_samples, replacement=True)
-    else:
-        sampler = WeightedRandomSampler(probs, n_samples, replacement=True)
-    edge_loader = DataLoader(dataset, batch_size=2000, sampler=sampler, num_workers=8, prefetch_factor=10)
-
-    ########################################################################################################################
-    #                                                       TRAIN                                                          #
-    ########################################################################################################################
-
-    trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
-
-    t2=time.time()
-    trainer.train(PATIENT, MAX_EPOCH)
-    t3 = time.time()
-
-    # save result
-    save_dir = data_provider.model_path
-    trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "complex_construction", str(iteration), t1-t0)
-    trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "training", str(iteration), t3-t2)
-    save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(iteration))
-    trainer.save(save_dir=save_dir, file_name="{}".format(VIS_MODEL_NAME))
-
-    print("Finish epoch {}...".format(iteration))
-
-    prev_model.load_state_dict(model.state_dict())
-    for param in prev_model.parameters():
-        param.requires_grad = False
-    w_prev = dict(prev_model.named_parameters())
     
 
 ########################################################################################################################
@@ -190,17 +111,3 @@ for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     vis.savefig(i, path=os.path.join(save_dir, "{}_{}_{}.png".format(DATASET, i, VIS_METHOD)))
 
     
-########################################################################################################################
-#                                                       EVALUATION                                                     #
-########################################################################################################################
-# eval_epochs = range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD)
-# EVAL_EPOCH_DICT = {
-#     "mnist":[1,10,15],
-#     "fmnist":[1,25,50],
-#     "cifar10":[1,100,199]
-# }
-# eval_epochs = EVAL_EPOCH_DICT[DATASET]
-# evaluator = Evaluator(data_provider, projector)
-
-# for eval_epoch in eval_epochs:
-#     evaluator.save_epoch_eval(eval_epoch, 15, temporal_k=5, file_name="{}".format(EVALUATION_NAME))

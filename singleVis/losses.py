@@ -167,22 +167,23 @@ class DummyTemporalLoss(nn.Module):
 
 
 class DVILoss(nn.Module):
-    def __init__(self, umap_loss, recon_loss, temporal_loss, lambd1, lambd2):
+    def __init__(self, umap_loss, recon_loss, temporal_loss, lambd1, lambd2, device):
         super(DVILoss, self).__init__()
         self.umap_loss = umap_loss
         self.recon_loss = recon_loss
         self.temporal_loss = temporal_loss
         self.lambd1 = lambd1
         self.lambd2 = lambd2
+        self.device = device
 
     def forward(self, edge_to, edge_from, a_to, a_from, curr_model, outputs):
         embedding_to, embedding_from = outputs["umap"]
         recon_to, recon_from = outputs["recon"]
         # TODO stop gradient edge_to_ng = edge_to.detach().clone()
 
-        recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from, a_to, a_from)
-        umap_l = self.umap_loss(embedding_to, embedding_from)
-        temporal_l = self.temporal_loss(curr_model)
+        recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from, a_to, a_from).to(self.device)
+        umap_l = self.umap_loss(embedding_to, embedding_from).to(self.device)
+        temporal_l = self.temporal_loss(curr_model).to(self.device)
 
         loss = umap_l + self.lambd1 * recon_l + self.lambd2 * temporal_l
 

@@ -279,13 +279,13 @@ class DVITrainer(SingleVisTrainer):
 
             outputs = self.model(edge_to, edge_from)
             umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
-            all_loss.append(loss.item())
+            all_loss.append(loss.mean().item())
             umap_losses.append(umap_l.item())
             recon_losses.append(recon_l.item())
-            temporal_losses.append(temporal_l.item())
+            temporal_losses.append(temporal_l.mean().item())
             # ===================backward====================
             self.optimizer.zero_grad()
-            loss.backward()
+            loss.mean().backward()
             self.optimizer.step()
         self._loss = sum(all_loss) / len(all_loss)
         self.model.eval()
