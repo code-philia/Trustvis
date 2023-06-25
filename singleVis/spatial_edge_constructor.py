@@ -21,6 +21,7 @@ from scipy.spatial import distance
 from scipy.sparse import csr_matrix
 import networkx as nx
 from itertools import combinations
+import torch
 
 class SpatialEdgeConstructorAbstractClass(ABC):
     @abstractmethod
@@ -66,13 +67,13 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
 
     ################################## mapper start ######################################################
 
-    def _construct_mapper_complex(self, train_data, filter_function):
+    def _construct_mapper_complex(self, train_data, filter_function,epoch, model):
         """
             construct a mapper complex using a filter function
             """
         # Apply filter function to the data
         print(f"Applying filter function: {filter_function.__name__}...")
-        filter_values = filter_function(train_data)
+        filter_values = filter_function(train_data, epoch, model)
         print(f"Filter function applied, got {len(filter_values)} filter values.")
 
         # Partition filter values into overlapping intervals
@@ -103,54 +104,63 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
                         cluster_indices = interval_data_indices[cluster_labels == cluster_id]
                         # Add edges to the graph for every pair of points in the cluster
                         G.add_edges_from(combinations(cluster_indices, 2))
+        # Verify if the graph has nodes and edges
+        if G.number_of_nodes() == 0 or G.number_of_edges() == 0:
+            raise ValueError("Graph has no nodes or edges.")
                         
         mapper_complex = nx.adjacency_matrix(G)
         print(f"Finished constructing simplices using {filter_function.__name__}.")
 
         return mapper_complex
     
-    def _construct_boundary_wise_complex_mapper(self, train_data, border_centers, filter_function):
+    def _construct_boundary_wise_complex_mapper(self, train_data, border_centers, filter_function,epoch, model):
         """
         Construct a boundary-wise mapper complex using a filter function.
         For each cluster of data points (derived from the filter function applied to data points in a particular interval),
         construct a vertex in the mapper graph. Connect vertices if their corresponding data clusters intersect.
         """
         # Combine train and border data
+        # print(train_data.shape, border_centers.shape)
         fitting_data = np.concatenate((train_data, border_centers), axis=0)
         
         # Apply the filter function
-        filter_values = filter_function(fitting_data)
+        filter_values = filter_function(fitting_data, epoch, model)
         
-        # Partition the filter values into overlapping intervals
+        # Partition filter values into overlapping intervals
+        print("Partitioning filter values into intervals...")
         intervals = self._partition_into_intervals(filter_values)
-        
-        # Initialize the Mapper complex (represented as an adjacency list)
-        mapper_complex = {}
-        
+        print(f"Partitioned into {len(intervals)} intervals.")
+
         # For each interval, select data points in that interval, cluster them,
-        # and create a vertex for each cluster in the mapper graph
+        # and create a simplex for each cluster
+       
+        # Initialize an empty graph
+        G = nx.Graph()
+        print("Constructing simplices...")
         for interval in intervals:
-            interval_data = fitting_data[(filter_values >= interval[0]) & (filter_values < interval[1])]
-            
-            if len(interval_data) > 0:
+            # interval_data = train_data[(filter_values >= interval[0]) & (filter_values < interval[1])]
+            interval_data_indices = np.where((filter_values >= interval[0]) & (filter_values < interval[1]))[0]
+
+            if len(interval_data_indices) > 0:
                 # Use DBSCAN to cluster data in the current interval
                 # Note: Depending on your data, you might want to use a different clustering algorithm
+                interval_data = fitting_data[interval_data_indices]
                 db = DBSCAN(eps=0.3, min_samples=2).fit(interval_data)
                 cluster_labels = db.labels_
-                
-                # Create a vertex for each cluster and add it to the mapper graph
+
+                # Create a simplex for each cluster
                 for cluster_id in np.unique(cluster_labels):
                     if cluster_id != -1:  # Ignore noise points
-                        mapper_complex[cluster_id] = {"points": interval_data[cluster_labels == cluster_id]}
-        
-        # Connect vertices in the mapper graph if their corresponding data clusters intersect
-        for id1, cluster1 in mapper_complex.items():
-            for id2, cluster2 in mapper_complex.items():
-                if id1 != id2 and self._clusters_intersect(cluster1["points"], cluster2["points"]):
-                    if "neighbors" not in mapper_complex[id1]:
-                        mapper_complex[id1]["neighbors"] = []
-                    mapper_complex[id1]["neighbors"].append(id2)
-        
+                        cluster_indices = interval_data_indices[cluster_labels == cluster_id]
+                        # Add edges to the graph for every pair of points in the cluster
+                        G.add_edges_from(combinations(cluster_indices, 2))
+        # Verify if the graph has nodes and edges
+        if G.number_of_nodes() == 0 or G.number_of_edges() == 0:
+            raise ValueError("Graph has no nodes or edges.")
+                        
+        mapper_complex = nx.adjacency_matrix(G)
+        print(f"Finished constructing simplices using {filter_function.__name__}.")
+
         return mapper_complex
 
     # def _clusters_intersect(self, cluster1, cluster2):
@@ -203,7 +213,7 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
 
     #     return densities
     #### TODO density_filter_function
-    def density_filter_function(self, data, epsilon=0.5):
+    def density_filter_function(self, data, epoch, model, epsilon=0.5):
         """
         The function calculates the density of each data point based on a Gaussian kernel
         """
@@ -218,6 +228,37 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         densities /= np.sum(densities)
 
         return densities
+    
+    def hook(self, activations, module, input, output):
+        activations.append(output)
+
+    def activation_filter(self, data, epoch, model):
+        activations = []  # Define activations here as local variable
+        model_location = os.path.join(self.data_provider.content_path, "Model", "Epoch_{}".format(epoch), "subject_model.pth")
+        model.load_state_dict(torch.load(model_location, map_location=torch.device("cpu")))
+        model.to(self.data_provider.DEVICE)
+        model.eval()
+
+        # Replace this with the layer you're interested in
+        # Note: The layer name 'fc2' is just an example and might not exist in your model
+        print(model)
+        desired_layer = model.fc  
+        handle = desired_layer.register_forward_hook(lambda module, input, output: self.hook(activations, module, input, output))
+
+        # Run data through the model
+        with torch.no_grad():
+            for x in data:
+                _ = model(x)
+
+        # Compute mean activation
+        mean_activations = [x.mean().item() for x in activations]
+
+        # Unregister the forward hook
+        handle.remove()
+
+        return mean_activations
+
+
 
     
 
@@ -752,10 +793,11 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
             json.dump(ti, f)
 
 class SingleEpochSpatialEdgeMapperConstructor(SpatialEdgeConstructor):
-    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors) -> None:
+    def __init__(self, data_provider, model, iteration, s_n_epochs, b_n_epochs, n_neighbors) -> None:
         super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
         self.iteration = iteration
         self.mapper = KeplerMapper(verbose=1)
+        self.model = model
     
     def construct(self):
         # load train data and border centers
@@ -767,8 +809,8 @@ class SingleEpochSpatialEdgeMapperConstructor(SpatialEdgeConstructor):
         if self.b_n_epochs > 0:
             # com11, _, _, _ = self._construct_fuzzy_complex(train_data)
             border_centers = self.data_provider.border_representation(self.iteration).squeeze()
-            complex = self._construct_mapper_complex(train_data, self.density_filter_function)
-            bw_complex = self._construct_boundary_wise_complex_mapper(train_data, border_centers)
+            complex = self._construct_mapper_complex(train_data, self.density_filter_function, self.iteration, self.model)
+            bw_complex = self._construct_boundary_wise_complex_mapper(train_data, border_centers, self.density_filter_function,self.iteration, self.model )
             edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, bw_complex)
             feature_vectors = np.concatenate((train_data, border_centers), axis=0)
             attention = np.zeros(feature_vectors.shape)

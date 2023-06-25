@@ -73,7 +73,7 @@ VISUALIZATION_PARAMETER = config["VISUALIZATION"]
 LAMBDA1 = VISUALIZATION_PARAMETER["LAMBDA1"]
 LAMBDA2 = VISUALIZATION_PARAMETER["LAMBDA2"]
 # B_N_EPOCHS = VISUALIZATION_PARAMETER["BOUNDARY"]["B_N_EPOCHS"]
-B_N_EPOCHS = 0
+B_N_EPOCHS = 1
 L_BOUND = VISUALIZATION_PARAMETER["BOUNDARY"]["L_BOUND"]
 ENCODER_DIMS = VISUALIZATION_PARAMETER["ENCODER_DIMS"]
 DECODER_DIMS = VISUALIZATION_PARAMETER["DECODER_DIMS"]
@@ -136,7 +136,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
     # Define Edge dataset
     t0 = time.time()
-    spatial_cons = SingleEpochSpatialEdgeMapperConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
+    spatial_cons = SingleEpochSpatialEdgeMapperConstructor(data_provider,net, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
     edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
     t1 = time.time()
 
