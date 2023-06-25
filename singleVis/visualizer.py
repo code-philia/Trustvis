@@ -33,6 +33,10 @@ class VisualizerAbstractClass(ABC):
     def get_background(self, *args, **kwargs):
         pass
 
+    @abstractmethod
+    def show_grid_embedding(self, *args, **kwargs):
+        pass
+
 class visualizer(VisualizerAbstractClass):
     def __init__(self, data_provider, projector, resolution, cmap='tab10'):
         self.data_provider = data_provider
@@ -79,6 +83,15 @@ class visualizer(VisualizerAbstractClass):
             plot = self.ax.plot([], [], '.', markeredgecolor=color,
                                 fillstyle='full', ms=6, zorder=4)
             self.sample_plots.append(plot[0])
+        
+        # Initialize white border points
+        for c in range(self.class_num):
+            color = self.cmap(c / (self.class_num - 1))
+            plot = self.ax.plot([], [], '.', label="border", ms=5,
+                    color="yellow", markeredgecolor=color, zorder=6, picker=mpl.rcParams['lines.markersize'])
+            self.sample_plots.append(plot[0])
+
+  
 
         color = (0.0, 0.0, 0.0, 1.0)
         plot = self.ax.plot([], [], '.', markeredgecolor=color,
@@ -134,7 +147,7 @@ class visualizer(VisualizerAbstractClass):
 
         return x_min, y_min, x_max, y_max
     
-    def get_epoch_decision_view(self, epoch, resolution, xy_limit=None):
+    def get_epoch_decision_view(self, epoch, resolution, xy_limit=None, forDetail=False):
         '''
         get background classifier view
         :param epoch_id: epoch that need to be visualized
@@ -181,7 +194,12 @@ class visualizer(VisualizerAbstractClass):
         color = diff * 0.5 * color + (1 - diff) * np.ones(color.shape, dtype=np.uint8)
         decision_view = color.reshape(resolution, resolution, 3)
         grid_view = grid.reshape(resolution, resolution, 2)
+        if forDetail == True:
+            return grid_samples, grid, border
+        
         return grid_view, decision_view
+
+    
     
     def savefig(self, epoch, path="vis"):
         '''
@@ -219,6 +237,79 @@ class visualizer(VisualizerAbstractClass):
         for c in range(self.class_num):
             data = embedding[np.logical_and(pred == c, train_labels != pred)]
             self.sample_plots[2*self.class_num + c].set_data(data.transpose())
+
+        # self.fig.canvas.draw()
+        # self.fig.canvas.flush_events()
+
+        # plt.text(-8, 8, "test", fontsize=18, style='oblique', ha='center', va='top', wrap=True)
+        plt.savefig(path)
+    
+
+    def show_grid_embedding(self, epoch, data, embedding, border, noOutline=False, path="vis"):
+        '''
+        Shows the current plot.
+        '''
+        self._init_plot(only_img=True)
+
+        x_min, y_min, x_max, y_max = self.get_epoch_plot_measures(epoch)
+
+        _, decision_view = self.get_epoch_decision_view(epoch, self.resolution)
+        self.cls_plot.set_data(decision_view)
+        self.cls_plot.set_extent((x_min, x_max, y_max, y_min))
+        self.ax.set_xlim((x_min, x_max))
+        self.ax.set_ylim((y_min, y_max))
+
+        # params_str = 'res: %d'
+        # desc = params_str % (self.resolution)
+        # self.desc.set_text(desc)
+        train_labels = self.data_provider.get_pred(epoch, data)
+        train_labels = train_labels.argmax(axis=1)
+        
+        inv = self.projector.batch_inverse(epoch, embedding)
+        pred = self.data_provider.get_pred(epoch, inv)
+        pred = pred.argmax(axis=1)
+        
+
+        # mesh_preds = self.data_provider.get_pred(epoch, inv)
+        # mesh_preds = mesh_preds + 1e-8
+
+        # sort_preds = np.sort(mesh_preds, axis=1)
+        # diff = (sort_preds[:, -1] - sort_preds[:, -2]) / (sort_preds[:, -1] - sort_preds[:, 0])
+        # border = np.zeros(len(diff), dtype=np.uint8) + 0.05
+        # border[diff < 0.15] = 1
+
+        # mesh_preds = self.data_provider.get_pred(epoch, data) + 1e-8
+
+        # sort_preds = np.sort(mesh_preds, axis=1)
+        # diff = (sort_preds[:, -1] - sort_preds[:, -2]) / (sort_preds[:, -1] - sort_preds[:, 0])
+        # border = np.zeros(len(diff), dtype=np.uint8) + 0.05
+        # border[diff < 0.15] = 1
+
+
+
+
+        if noOutline == True:
+            for c in range(self.class_num):
+                data = embedding[np.logical_and(train_labels == c, border!=1)]
+                self.sample_plots[c].set_data(data.transpose())
+            for c in range(self.class_num):
+                data = embedding[np.logical_and(train_labels == c, border==1)]
+                self.sample_plots[3*self.class_num + c].set_data(data.transpose())
+        else: 
+            for c in range(self.class_num):
+                data = embedding[np.logical_and(train_labels == c, train_labels == pred, border!=1)]
+                self.sample_plots[c].set_data(data.transpose())
+            for c in range(self.class_num):
+                data = embedding[np.logical_and(train_labels == c, train_labels != pred, border!=1)]
+                self.sample_plots[self.class_num+c].set_data(data.transpose())
+            for c in range(self.class_num):
+                data = embedding[np.logical_and(pred == c, train_labels != pred, border!=1)]
+                self.sample_plots[2*self.class_num + c].set_data(data.transpose())
+            for c in range(self.class_num):
+                data = embedding[np.logical_and(train_labels == c, border==1)]
+                self.sample_plots[3*self.class_num+ c].set_data(data.transpose())
+
+
 
         # self.fig.canvas.draw()
         # self.fig.canvas.flush_events()
@@ -473,6 +564,7 @@ class DenseALvisualizer(visualizer):
 
         # plt.text(-8, 8, "test", fontsize=18, style='oblique', ha='center', va='top', wrap=True)
         plt.savefig(path)
+    
     
     def savefig_cus(self, iteration, epoch, data, pred, labels, path="vis"):
         '''

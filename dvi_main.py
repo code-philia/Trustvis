@@ -36,6 +36,7 @@ parser = argparse.ArgumentParser(description='Process hyperparameters...')
 parser.add_argument('--content_path', type=str)
 parser.add_argument('--epoch_start', type=int)
 parser.add_argument('--epoch_end', type=int)
+parser.add_argument('--epoch_period', type=int)
 args = parser.parse_args()
 
 CONTENT_PATH = args.content_path
@@ -59,6 +60,7 @@ EPOCH_PERIOD = config["EPOCH_PERIOD"]
 
 EPOCH_START = args.epoch_start
 EPOCH_END = args.epoch_end
+EPOCH_PERIOD = args.epoch_period
 
 # Training parameter (subject model)
 TRAINING_PARAMETER = config["TRAINING"]
@@ -181,13 +183,13 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 ########################################################################################################################
 
 from singleVis.visualizer import visualizer
-
+now = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time())) 
 vis = visualizer(data_provider, projector, 200, "tab10")
 save_dir = os.path.join(data_provider.content_path, "imgptDVI")
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
-    vis.savefig(i, path=os.path.join(save_dir, "{}_{}_{}.png".format(DATASET, i, VIS_METHOD)))
+    vis.savefig(i, path=os.path.join(save_dir, "{}_{}_{}_{}.png".format(DATASET, i, VIS_METHOD,now)))
 
     
 ########################################################################################################################

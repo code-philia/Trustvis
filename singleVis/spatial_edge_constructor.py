@@ -15,6 +15,12 @@ from singleVis.kcenter_greedy import kCenterGreedy
 from singleVis.intrinsic_dim import IntrinsicDim
 from singleVis.backend import get_graph_elements, get_attention
 from singleVis.utils import find_neighbor_preserving_rate
+from kmapper import KeplerMapper
+from sklearn.cluster import DBSCAN
+from scipy.spatial import distance
+from scipy.sparse import csr_matrix
+import networkx as nx
+from itertools import combinations
 
 class SpatialEdgeConstructorAbstractClass(ABC):
     @abstractmethod
@@ -56,6 +62,167 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         self.s_n_epochs = s_n_epochs
         self.b_n_epochs = b_n_epochs
         self.n_neighbors = n_neighbors
+
+
+    ################################## mapper start ######################################################
+
+    def _construct_mapper_complex(self, train_data, filter_function):
+        """
+            construct a mapper complex using a filter function
+            """
+        # Apply filter function to the data
+        print(f"Applying filter function: {filter_function.__name__}...")
+        filter_values = filter_function(train_data)
+        print(f"Filter function applied, got {len(filter_values)} filter values.")
+
+        # Partition filter values into overlapping intervals
+        print("Partitioning filter values into intervals...")
+        intervals = self._partition_into_intervals(filter_values)
+        print(f"Partitioned into {len(intervals)} intervals.")
+
+        # For each interval, select data points in that interval, cluster them,
+        # and create a simplex for each cluster
+       
+        # Initialize an empty graph
+        G = nx.Graph()
+        print("Constructing simplices...")
+        for interval in intervals:
+            # interval_data = train_data[(filter_values >= interval[0]) & (filter_values < interval[1])]
+            interval_data_indices = np.where((filter_values >= interval[0]) & (filter_values < interval[1]))[0]
+
+            if len(interval_data_indices) > 0:
+                # Use DBSCAN to cluster data in the current interval
+                # Note: Depending on your data, you might want to use a different clustering algorithm
+                interval_data = train_data[interval_data_indices]
+                db = DBSCAN(eps=0.3, min_samples=2).fit(interval_data)
+                cluster_labels = db.labels_
+
+                # Create a simplex for each cluster
+                for cluster_id in np.unique(cluster_labels):
+                    if cluster_id != -1:  # Ignore noise points
+                        cluster_indices = interval_data_indices[cluster_labels == cluster_id]
+                        # Add edges to the graph for every pair of points in the cluster
+                        G.add_edges_from(combinations(cluster_indices, 2))
+                        
+        mapper_complex = nx.adjacency_matrix(G)
+        print(f"Finished constructing simplices using {filter_function.__name__}.")
+
+        return mapper_complex
+    
+    def _construct_boundary_wise_complex_mapper(self, train_data, border_centers, filter_function):
+        """
+        Construct a boundary-wise mapper complex using a filter function.
+        For each cluster of data points (derived from the filter function applied to data points in a particular interval),
+        construct a vertex in the mapper graph. Connect vertices if their corresponding data clusters intersect.
+        """
+        # Combine train and border data
+        fitting_data = np.concatenate((train_data, border_centers), axis=0)
+        
+        # Apply the filter function
+        filter_values = filter_function(fitting_data)
+        
+        # Partition the filter values into overlapping intervals
+        intervals = self._partition_into_intervals(filter_values)
+        
+        # Initialize the Mapper complex (represented as an adjacency list)
+        mapper_complex = {}
+        
+        # For each interval, select data points in that interval, cluster them,
+        # and create a vertex for each cluster in the mapper graph
+        for interval in intervals:
+            interval_data = fitting_data[(filter_values >= interval[0]) & (filter_values < interval[1])]
+            
+            if len(interval_data) > 0:
+                # Use DBSCAN to cluster data in the current interval
+                # Note: Depending on your data, you might want to use a different clustering algorithm
+                db = DBSCAN(eps=0.3, min_samples=2).fit(interval_data)
+                cluster_labels = db.labels_
+                
+                # Create a vertex for each cluster and add it to the mapper graph
+                for cluster_id in np.unique(cluster_labels):
+                    if cluster_id != -1:  # Ignore noise points
+                        mapper_complex[cluster_id] = {"points": interval_data[cluster_labels == cluster_id]}
+        
+        # Connect vertices in the mapper graph if their corresponding data clusters intersect
+        for id1, cluster1 in mapper_complex.items():
+            for id2, cluster2 in mapper_complex.items():
+                if id1 != id2 and self._clusters_intersect(cluster1["points"], cluster2["points"]):
+                    if "neighbors" not in mapper_complex[id1]:
+                        mapper_complex[id1]["neighbors"] = []
+                    mapper_complex[id1]["neighbors"].append(id2)
+        
+        return mapper_complex
+
+    # def _clusters_intersect(self, cluster1, cluster2):
+    #     """
+    #     Check if two data clusters intersect.
+    #     Note: Here we assume that clusters are represented as sets of data points.
+    #     Depending on your actual implementation, you might need to adjust this.
+    #     """
+    #     return not set(cluster1).isdisjoint(cluster2)
+    
+    def _clusters_intersect(self, cluster1, cluster2):
+        """
+        Check if two clusters intersect, i.e., have at least one point in common.
+        """
+        cluster1 = map(tuple, cluster1)
+        cluster2 = map(tuple, cluster2)
+
+        return not set(cluster1).isdisjoint(set(cluster2))
+
+
+
+    def _partition_into_intervals(self, filter_values, n_intervals=10, overlap=0.1):
+        """
+        Partition the range of filter_values into overlapping intervals
+        """
+        filter_min, filter_max = np.min(filter_values), np.max(filter_values)
+        interval_size = (filter_max - filter_min) / n_intervals
+        overlap_size = interval_size * overlap
+    
+        intervals = []
+        for i in range(n_intervals):
+            interval_start = filter_min + i * interval_size
+            interval_end = interval_start + interval_size + overlap_size
+            intervals.append((interval_start, interval_end))
+    
+        return intervals
+    
+    # def density_filter_function(self, data, epsilon=0.5):
+    #     """
+    #     The function calculates the density of each data point based on a Gaussian kernel
+    #     """
+    #     densities = np.zeros(data.shape[0])
+    
+    #     for i, x in enumerate(data):
+    #         distances = distance.cdist([x], data, 'euclidean').squeeze()
+    #         densities[i] = np.sum(np.exp(-(distances ** 2) / epsilon))
+    
+    #     # Normalize the densities so that they sum up to 1
+    #     densities /= np.sum(densities)
+
+    #     return densities
+    #### TODO density_filter_function
+    def density_filter_function(self, data, epsilon=0.5):
+        """
+        The function calculates the density of each data point based on a Gaussian kernel
+        """
+        # distances = distance.cdist(data, data, 'euclidean')
+        # densities = np.sum(np.exp(-(distances ** 2) / epsilon), axis=1)
+
+        # # Normalize the densities so that they sum up to 1
+        # densities /= np.sum(densities)
+        densities = np.random.rand(data.shape[0])
+    
+        # Normalize the densities so that they sum up to 1
+        densities /= np.sum(densities)
+
+        return densities
+
+    
+
+    ################################## mapper end ######################################################
+    
     
     def _construct_fuzzy_complex(self, train_data):
         """
@@ -68,6 +235,7 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         # distance metric
         metric = "euclidean"
         # get nearest neighbors
+        
         nnd = NNDescent(
             train_data,
             n_neighbors=self.n_neighbors,
@@ -546,6 +714,104 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
     def construct(self):
         # load train data and border centers
         train_data = self.data_provider.train_representation(self.iteration)
+        # selected = np.random.choice(len(train_data), int(0.3*len(train_data)), replace=False)
+        # train_data = train_data[selected]
+
+        if self.b_n_epochs > 0:
+            border_centers = self.data_provider.border_representation(self.iteration).squeeze()
+            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+            bw_complex, _, _, _ = self._construct_boundary_wise_complex(train_data, border_centers)
+            edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, bw_complex)
+            feature_vectors = np.concatenate((train_data, border_centers), axis=0)
+            # pred_model = self.data_provider.prediction_function(self.iteration)
+            # attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
+            attention = np.zeros(feature_vectors.shape)
+        elif self.b_n_epochs == 0:
+            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+            edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, None)
+            feature_vectors = np.copy(train_data)
+            # pred_model = self.data_provider.prediction_function(self.iteration)
+            # attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
+            attention = np.zeros(feature_vectors.shape)
+        else: 
+            raise Exception("Illegal border edges proposion!")
+            
+        return edge_to, edge_from, weight, feature_vectors, attention
+    
+    def record_time(self, save_dir, file_name, operation, t):
+        file_path = os.path.join(save_dir, file_name+".json")
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                ti = json.load(f)
+        else:
+            ti = dict()
+        if operation not in ti.keys():
+            ti[operation] = dict()
+        ti[operation][str(self.iteration)] = t
+        with open(file_path, "w") as f:
+            json.dump(ti, f)
+
+class SingleEpochSpatialEdgeMapperConstructor(SpatialEdgeConstructor):
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors) -> None:
+        super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
+        self.iteration = iteration
+        self.mapper = KeplerMapper(verbose=1)
+    
+    def construct(self):
+        # load train data and border centers
+        train_data = self.data_provider.train_representation(self.iteration)
+        #### TODO sampling method
+        selected = np.random.choice(len(train_data), int(0.3*len(train_data)), replace=False)
+        train_data = train_data[selected]
+
+        if self.b_n_epochs > 0:
+            # com11, _, _, _ = self._construct_fuzzy_complex(train_data)
+            border_centers = self.data_provider.border_representation(self.iteration).squeeze()
+            complex = self._construct_mapper_complex(train_data, self.density_filter_function)
+            bw_complex = self._construct_boundary_wise_complex_mapper(train_data, border_centers)
+            edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, bw_complex)
+            feature_vectors = np.concatenate((train_data, border_centers), axis=0)
+            attention = np.zeros(feature_vectors.shape)
+        elif self.b_n_epochs == 0:
+            complex = self._construct_mapper_complex(train_data, self.density_filter_function)
+            edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, None)
+            feature_vectors = np.copy(train_data)          
+            attention = np.zeros(feature_vectors.shape)
+        else: 
+            raise Exception("Illegal border edges proposion!")
+            
+        return edge_to, edge_from, weight, feature_vectors, attention
+    
+    def record_time(self, save_dir, file_name, operation, t):
+        file_path = os.path.join(save_dir, file_name+".json")
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                ti = json.load(f)
+        else:
+            ti = dict()
+        if operation not in ti.keys():
+            ti[operation] = dict()
+        ti[operation][str(self.iteration)] = t
+        with open(file_path, "w") as f:
+            json.dump(ti, f)
+
+class SingleEpochSpatialEdgeConstructorForGrid(SpatialEdgeConstructor):
+    def __init__(self, data_provider, grid_high, iteration, s_n_epochs, b_n_epochs, n_neighbors,only_grid=False) -> None:
+        super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
+        self.iteration = iteration
+        self.grid_high = grid_high
+        self.only_grid = only_grid
+    
+    def construct(self):
+        # load train data and border centers
+        train_data = self.data_provider.train_representation(self.iteration)
+        train_data = np.concatenate((train_data, self.grid_high), axis=0)
+       
+        if self.only_grid == True: 
+            train_data = self.grid_high
+
+        print("train_data",train_data.shape, "if only:", self.only_grid)
+
         # selected = np.random.choice(len(train_data), int(0.9*len(train_data)), replace=False)
         # train_data = train_data[selected]
 

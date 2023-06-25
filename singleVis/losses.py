@@ -164,6 +164,16 @@ class DummyTemporalLoss(nn.Module):
     def forward(self, curr_module):
         loss = torch.tensor(0., requires_grad=True).to(self.device)
         return loss
+    
+
+class PositionRecoverLoss(nn.Module):
+    def __init__(self, device) -> None:
+        super(PositionRecoverLoss, self).__init__()
+        self.device = device
+    def forward(self, position, recover_position):
+        mse_loss = nn.MSELoss().to(self.device)
+        loss = mse_loss(position, recover_position)
+        return loss
 
 
 class DVILoss(nn.Module):
