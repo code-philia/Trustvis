@@ -37,6 +37,7 @@ parser.add_argument('--content_path', type=str)
 parser.add_argument('--epoch_start', type=int)
 parser.add_argument('--epoch_end', type=int)
 parser.add_argument('--epoch_period', type=int)
+parser.add_argument('--preprocess', type=int,default=1)
 args = parser.parse_args()
 
 CONTENT_PATH = args.content_path
@@ -94,6 +95,7 @@ net = eval("subject_model.{}()".format(NET))
 ########################################################################################################################
 # Define data_provider
 data_provider = NormalDataProvider(CONTENT_PATH, net, EPOCH_START, EPOCH_END, EPOCH_PERIOD, device=DEVICE, epoch_name='Epoch',classes=CLASSES,verbose=1)
+PREPROCESS = args.preprocess
 if PREPROCESS:
     data_provider._meta_data()
     if B_N_EPOCHS >0:

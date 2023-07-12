@@ -131,6 +131,7 @@ class visualizer(VisualizerAbstractClass):
     def get_epoch_plot_measures(self, epoch):
         """get plot measure for visualization"""
         data = self.data_provider.train_representation(epoch)
+        
         embedded = self.projector.batch_project(epoch, data)
 
         ebd_min = np.min(embedded, axis=0)
@@ -144,6 +145,8 @@ class visualizer(VisualizerAbstractClass):
         y_min = min(x_min, y_min)
         x_max = max(x_max, y_max)
         y_max = max(x_max, y_max)
+
+        
 
         return x_min, y_min, x_max, y_max
     
@@ -208,6 +211,15 @@ class visualizer(VisualizerAbstractClass):
         self._init_plot(only_img=True)
 
         x_min, y_min, x_max, y_max = self.get_epoch_plot_measures(epoch)
+
+        # with torch.no_grad():
+            # mu, _ = self.projector.
+            # mu = mu.cpu().numpy()  # Convert to numpy array for easier manipulation
+
+            # Xmin, Ymin = mu.min(axis=0)  # Minimum values for each dimension
+            # Xmax, Ymax = mu.max(axis=0)  # Maximum values for each dimension
+
+
 
         _, decision_view = self.get_epoch_decision_view(epoch, self.resolution)
         self.cls_plot.set_data(decision_view)
@@ -488,6 +500,7 @@ class DenseALvisualizer(visualizer):
         print('Computing decision regions ...')
 
         x_min, y_min, x_max, y_max = self.get_epoch_plot_measures(iteration, epoch)
+
 
         # create grid
         xs = np.linspace(x_min, x_max, resolution)

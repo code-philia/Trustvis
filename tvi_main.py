@@ -19,7 +19,7 @@ from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss
 from singleVis.edge_dataset import DVIDataHandler
 from singleVis.trainer import DVITrainer
 from singleVis.data import NormalDataProvider
-from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeMapperConstructor
+from singleVis.spatial_edge_constructor import SingleEpochSpatialInterpolatedEdgeConstructor
 from singleVis.projector import DVIProjector
 from singleVis.eval.evaluator import Evaluator
 from singleVis.utils import find_neighbor_preserving_rate
@@ -73,7 +73,7 @@ VISUALIZATION_PARAMETER = config["VISUALIZATION"]
 LAMBDA1 = VISUALIZATION_PARAMETER["LAMBDA1"]
 LAMBDA2 = VISUALIZATION_PARAMETER["LAMBDA2"]
 # B_N_EPOCHS = VISUALIZATION_PARAMETER["BOUNDARY"]["B_N_EPOCHS"]
-B_N_EPOCHS = 1
+B_N_EPOCHS = 0
 L_BOUND = VISUALIZATION_PARAMETER["BOUNDARY"]["L_BOUND"]
 ENCODER_DIMS = VISUALIZATION_PARAMETER["ENCODER_DIMS"]
 DECODER_DIMS = VISUALIZATION_PARAMETER["DECODER_DIMS"]
@@ -128,6 +128,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         # TODO AL mode, redefine train_representation
         prev_data = data_provider.train_representation(iteration-EPOCH_PERIOD)
         curr_data = data_provider.train_representation(iteration)
+        curr_data = curr_data.reshape(curr_data.shape[0], -1) 
         npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
         temporal_loss_fn = TemporalLoss(w_prev, DEVICE)
         criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=LAMBDA2*npr,device=DEVICE)
@@ -136,7 +137,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
     # Define Edge dataset
     t0 = time.time()
-    spatial_cons = SingleEpochSpatialEdgeMapperConstructor(data_provider,net, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
+    # spatial_cons = SingleEpochSpatialEdgeMapperConstructor(data_provider,net, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
+    spatial_cons = SingleEpochSpatialInterpolatedEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
     edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
     t1 = time.time()
 
@@ -188,7 +190,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 from singleVis.visualizer import visualizer
 now = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time())) 
 vis = visualizer(data_provider, projector, 200, "tab10")
-save_dir = os.path.join(data_provider.content_path, "imgptDVI")
+save_dir = os.path.join(data_provider.content_path, "imgptTVI")
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
@@ -207,5 +209,5 @@ for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
 # eval_epochs = EVAL_EPOCH_DICT[DATASET]
 # evaluator = Evaluator(data_provider, projector)
 
-# for eval_epoch in eval_epochs:
-#     evaluator.save_epoch_eval(eval_epoch, 15, temporal_k=5, file_name="{}".format(EVALUATION_NAME))
+# # for eval_epoch in eval_epochs
+# evaluator.save_epoch_eval(EPOCH_START, 15, temporal_k=5, file_name="{}".format(EVALUATION_NAME))
