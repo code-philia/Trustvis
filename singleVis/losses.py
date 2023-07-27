@@ -69,18 +69,44 @@ class UmapLoss(nn.Module):
         return torch.mean(ce_loss)
 
 
+# class ReconstructionLoss(nn.Module):
+#     def __init__(self, beta=1.0):
+#         super(ReconstructionLoss, self).__init__()
+#         self._beta = beta
+
+#     def forward(self, edge_to, edge_from, recon_to, recon_from, a_to, a_from):
+#         loss1 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_to), self._beta), torch.pow(edge_to - recon_to, 2)), 1))
+#         loss2 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_from), self._beta), torch.pow(edge_from - recon_from, 2)), 1))
+#         # without attention weights
+#         # loss1 = torch.mean(torch.mean(torch.pow(edge_to - recon_to, 2), 1))
+#         # loss2 = torch.mean(torch.mean(torch.pow(edge_from - recon_from, 2), 1))
+#         return (loss1 + loss2)/2
+
 class ReconstructionLoss(nn.Module):
-    def __init__(self, beta=1.0):
+    def __init__(self, beta=1.0, weight_loss1=0.5, weight_loss2=0.5, clip_val=None):
         super(ReconstructionLoss, self).__init__()
         self._beta = beta
+        self.weight_loss1 = weight_loss1
+        self.weight_loss2 = weight_loss2
+        self.clip_val = clip_val
 
     def forward(self, edge_to, edge_from, recon_to, recon_from, a_to, a_from):
-        loss1 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_to), self._beta), torch.pow(edge_to - recon_to, 2)), 1))
-        loss2 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_from), self._beta), torch.pow(edge_from - recon_from, 2)), 1))
-        # without attention weights
-        # loss1 = torch.mean(torch.mean(torch.pow(edge_to - recon_to, 2), 1))
-        # loss2 = torch.mean(torch.mean(torch.pow(edge_from - recon_from, 2), 1))
-        return (loss1 + loss2)/2
+        # Compute weights
+        weight_to = torch.pow((1+a_to), self._beta)
+        weight_from = torch.pow((1+a_from), self._beta)
+        
+        # Optional: Clip weights
+        if self.clip_val is not None:
+            weight_to = torch.clamp(weight_to, max=self.clip_val)
+            weight_from = torch.clamp(weight_from, max=self.clip_val)
+        
+        # Compute individual losses
+        loss1 = torch.mean(torch.mean(torch.multiply(weight_to, torch.pow(edge_to - recon_to, 2)), 1))
+        loss2 = torch.mean(torch.mean(torch.multiply(weight_from, torch.pow(edge_from - recon_from, 2)), 1))
+        
+        # Return weighted sum of losses
+        return self.weight_loss1 * loss1 + self.weight_loss2 * loss2
+
 
 
 class SmoothnessLoss(nn.Module):
@@ -198,6 +224,55 @@ class DVILoss(nn.Module):
         loss = umap_l + self.lambd1 * recon_l + self.lambd2 * temporal_l
 
         return umap_l, self.lambd1 *recon_l, self.lambd2 *temporal_l, loss
+
+class MINE(nn.Module):
+    def __init__(self):
+        super(MINE, self).__init__()
+        # 在这里，MINE网络是一个MLP
+        self.network = nn.Sequential(
+            nn.Linear(2, 100),
+            nn.ReLU(),
+            nn.Linear(100, 1),
+        )
+
+    def forward(self, x, y):
+        joint = torch.cat((x, y), dim=1)
+        marginal = torch.cat((x, y[torch.randperm(x.size(0))]), dim=1)
+        t_joint = self.network(joint)
+        t_marginal = self.network(marginal)
+        # 重新调整以避免exp(t)变为无穷大
+        mi = torch.mean(t_joint) - torch.log(torch.mean(torch.exp(t_marginal)))
+        return -mi  # 最大化mi <=> 最小化-mi
+
+
+class TVILoss(nn.Module):
+    def __init__(self, umap_loss, recon_loss, temporal_loss, MI_loss, lambd1, lambd2, lambd3, device):
+        super(TVILoss, self).__init__()
+        self.umap_loss = umap_loss
+        self.recon_loss = recon_loss
+        self.temporal_loss = temporal_loss
+        self.MI_loss = MI_loss
+        self.lambd1 = lambd1
+        self.lambd2 = lambd2
+        self.lambd3 = lambd3
+        self.device = device
+
+    def forward(self, edge_to, edge_from, a_to, a_from, curr_model, outputs):
+        embedding_to, embedding_from = outputs["umap"]
+        recon_to, recon_from = outputs["recon"]
+        recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from, a_to, a_from).to(self.device)
+        umap_l = self.umap_loss(embedding_to, embedding_from).to(self.device)
+        temporal_l = self.temporal_loss(curr_model).to(self.device)
+         # 计算嵌入和边之间的互信息
+        # MI_l = self.MI_loss(embedding_to, embedding_from, edge_to, edge_from).to(self.device)
+        # Calculate mutual information between embedding and edge separately
+        MI_l_embedding = self.MI_loss(embedding_to, embedding_from).to(self.device)
+        MI_l_edge = self.MI_loss(edge_to, edge_from).to(self.device)
+        # Assuming you want to give them equal weight, but you can adjust it as you need
+        MI_l = (MI_l_embedding + MI_l_edge) / 2
+        loss = umap_l + self.lambd1 * recon_l + self.lambd2 * temporal_l + self.lambd3 * MI_l
+
+        return umap_l, self.lambd1 * recon_l, self.lambd2 * temporal_l, loss
 
 # class DVILoss(nn.Module):
 #     def __init__(self, umap_loss, recon_loss, temporal_loss, lambd1, lambd2, device):

@@ -174,6 +174,7 @@ class visualizer(VisualizerAbstractClass):
 
         # map gridmpoint to images
         grid_samples = self.projector.batch_inverse(epoch, grid)
+        print("grid_samples",grid_samples.shape)
 
         mesh_preds = self.data_provider.get_pred(epoch, grid_samples)
         mesh_preds = mesh_preds + 1e-8

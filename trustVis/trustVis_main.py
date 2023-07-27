@@ -64,8 +64,24 @@ data_provider = NormalDataProvider(CONTENT_PATH, net, EPOCH_START, EPOCH_END, EP
 
 from trustVis.sampeling import Sampleing
 
-epoch=20
-print("sampelling starts")
-sampleing = Sampleing(data_provider,net,epoch,DEVICE)
-res,vol, va,r_col = sampleing.probability_density_cal(data_provider.train_representation(epoch),512,5)
-print("resss",res[1],vol[1],va[1],r_col[:10] )
+epoch=15
+# print("sampelling starts")
+# sampleing = Sampleing(data_provider,epoch,DEVICE)
+# # res,vol, va,r_col = sampleing.probability_density_cal(data_provider.train_representation(epoch),512,5)
+# # print("resss",res[:10],r_col[:10] )
+# # labels = sampleing.space_split(data_provider.train_representation(epoch))
+# # print("info...",labels)
+# # np.save('labels.npy',labels)
+# indicates = sampleing.sample_data(data_provider.train_representation(epoch),0.3)
+# np.save(os.path.join(CONTENT_PATH, "Model", "Epoch_{}".format(epoch), "sampel.npy"),indicates )
+
+
+# [-0.0, -0.0, 0.06899287148695143, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, 0.08223809823697212, -0.0, -0.0, -0.0, 0.06252035698133393, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, 0.037740327982847086, -0.0, -0.0, -0.0, 0.011696039763191298, -0.0, -0.0, -0.0, -0.0, -0.0, 0.00947874395454377, -0.0, 0.40546510810816444, 0.03509131981127006, 0.0953101798043249, -0.0, -0.0, -0.0, -0.0, 0.030305349495328922, -0.0, -0.0, inf, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, 0.060624621816434854, 0.027398974188114388, -0.0, 0.055569851154810765, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0]
+
+from trustVis.data_generation import DataGeneration
+
+dataGeneration = DataGeneration(net, data_provider,epoch,DEVICE)
+
+aaa,bbb = dataGeneration.gen()
+# print("aaa",aaa[0])
+print("aaa",aaa[0].shape,bbb.shape)

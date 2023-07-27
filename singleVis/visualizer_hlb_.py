@@ -87,7 +87,7 @@ class visualizer(VisualizerAbstractClass):
         # Initialize white border points
         for c in range(self.class_num):
             color = self.cmap(c / (self.class_num - 1))
-            plot = self.ax.plot([], [], '.', label="border", ms=10,
+            plot = self.ax.plot([], [], '.', label="border", ms=4,
                     color="yellow", markeredgecolor=color, zorder=6, picker=mpl.rcParams['lines.markersize'])
             self.sample_plots.append(plot[0])
 
@@ -300,7 +300,7 @@ class visualizer(VisualizerAbstractClass):
         # border = np.zeros(len(diff), dtype=np.uint8) + 0.05
         # border[diff < 0.15] = 1
 
-
+        print("train_labels",train_labels.shape, pred.shape, border.shape)
 
 
         if noOutline == True:

@@ -32,11 +32,13 @@ VIS_METHOD = "DVI" # DeepVisualInsight
 ########################################################################################################################
 #                                                     LOAD PARAMETERS                                                  #
 ########################################################################################################################
+
+
 parser = argparse.ArgumentParser(description='Process hyperparameters...')
 parser.add_argument('--content_path', type=str)
-parser.add_argument('--epoch_start', type=int)
-parser.add_argument('--epoch_end', type=int)
-parser.add_argument('--epoch_period', type=int)
+parser.add_argument('--epoch', type=int)
+# parser.add_argument('--epoch_end', type=int)
+parser.add_argument('--epoch_period', type=int,default=1)
 parser.add_argument('--preprocess', type=int,default=1)
 args = parser.parse_args()
 
@@ -55,12 +57,13 @@ CLASSES = config["CLASSES"]
 DATASET = config["DATASET"]
 PREPROCESS = config["VISUALIZATION"]["PREPROCESS"]
 GPU_ID = config["GPU"]
+GPU_ID = 1
 EPOCH_START = config["EPOCH_START"]
 EPOCH_END = config["EPOCH_END"]
 EPOCH_PERIOD = config["EPOCH_PERIOD"]
 
-EPOCH_START = args.epoch_start
-EPOCH_END = args.epoch_end
+EPOCH_START = args.epoch
+EPOCH_END = args.epoch
 EPOCH_PERIOD = args.epoch_period
 
 # Training parameter (subject model)
@@ -99,7 +102,7 @@ PREPROCESS = args.preprocess
 if PREPROCESS:
     data_provider._meta_data()
     if B_N_EPOCHS >0:
-        data_provider._estimate_boundary(LEN//10, l_bound=L_BOUND)
+        data_provider._estimate_boundary(LEN // 10, l_bound=L_BOUND)
 
 # Define visualization models
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
@@ -115,6 +118,7 @@ single_loss_fn = SingleVisLoss(umap_loss_fn, recon_loss_fn, lambd=LAMBDA1)
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 start_flag = 1
+
 prev_model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
 for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
@@ -135,7 +139,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
     # Define Edge dataset
     t0 = time.time()
-    spatial_cons = SingleEpochSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
+    spatial_cons = SingleEpochSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
     edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
     t1 = time.time()
 

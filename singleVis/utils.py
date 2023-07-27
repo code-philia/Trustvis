@@ -2,6 +2,7 @@ from re import sub
 import torch
 import math
 import tqdm
+# from tqdm import tqdm
 import numpy as np
 import json
 import time
@@ -99,6 +100,8 @@ def get_border_points(model, input_x, confs, predictions, device, num_adv_eg, l_
             idx += 1
 
     t0 = time.time()
+
+    pbar = tqdm.tqdm(total=num_adv_eg, desc="Generating adversarial examples")
     while num_adv < num_adv_eg:
         idxs = np.argwhere(tot_num != 0).squeeze()
         succ = curr_samples[idxs] / tot_num[idxs]
@@ -139,6 +142,7 @@ def get_border_points(model, input_x, confs, predictions, device, num_adv_eg, l_
             adv_examples = torch.cat((adv_examples, attack1), dim=0)
             num_adv += 1
             curr_samples[selected] += 1
+            pbar.update(1)
         tot_num[selected] += 1
 
         if num_adv < num_adv_eg:
@@ -148,7 +152,9 @@ def get_border_points(model, input_x, confs, predictions, device, num_adv_eg, l_
                 adv_examples = torch.cat((adv_examples, attack2), dim=0)
                 num_adv += 1
                 curr_samples[selected] += 1
-
+                pbar.update(1)
+    
+    pbar.close()
     t1 = time.time()
     if verbose:
         print('Total time {:2f}'.format(t1 - t0))

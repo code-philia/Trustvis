@@ -15,11 +15,11 @@ from umap.umap_ import find_ab_params
 
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss
+from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss,MINE,TVILoss
 from singleVis.edge_dataset import DVIDataHandler
-from singleVis.trainer import DVITrainer
+from singleVis.trainer import DVITrainer, DVIReFineTrainer
 from singleVis.data import NormalDataProvider
-from singleVis.spatial_edge_constructor import SingleEpochSpatialInterpolatedEdgeConstructor
+from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructorTVI
 from singleVis.projector import DVIProjector
 from singleVis.eval.evaluator import Evaluator
 from singleVis.utils import find_neighbor_preserving_rate
@@ -34,9 +34,9 @@ VIS_METHOD = "DVI" # DeepVisualInsight
 ########################################################################################################################
 parser = argparse.ArgumentParser(description='Process hyperparameters...')
 parser.add_argument('--content_path', type=str)
-parser.add_argument('--epoch_start', type=int)
-parser.add_argument('--epoch_end', type=int)
-parser.add_argument('--epoch_period', type=int)
+parser.add_argument('--epoch', type=int)
+# parser.add_argument('--epoch_end', type=int)
+parser.add_argument('--epoch_period', type=int,default=1)
 parser.add_argument('--preprocess', type=int,default=1)
 args = parser.parse_args()
 
@@ -59,8 +59,9 @@ EPOCH_START = config["EPOCH_START"]
 EPOCH_END = config["EPOCH_END"]
 EPOCH_PERIOD = config["EPOCH_PERIOD"]
 
-EPOCH_START = args.epoch_start
-EPOCH_END = args.epoch_end
+###TODO 
+EPOCH_START = args.epoch
+EPOCH_END = args.epoch
 EPOCH_PERIOD = args.epoch_period
 
 # Training parameter (subject model)
@@ -72,8 +73,7 @@ LEN = TRAINING_PARAMETER["train_num"]
 VISUALIZATION_PARAMETER = config["VISUALIZATION"]
 LAMBDA1 = VISUALIZATION_PARAMETER["LAMBDA1"]
 LAMBDA2 = VISUALIZATION_PARAMETER["LAMBDA2"]
-# B_N_EPOCHS = VISUALIZATION_PARAMETER["BOUNDARY"]["B_N_EPOCHS"]
-B_N_EPOCHS = 0
+B_N_EPOCHS = VISUALIZATION_PARAMETER["BOUNDARY"]["B_N_EPOCHS"]
 L_BOUND = VISUALIZATION_PARAMETER["BOUNDARY"]["L_BOUND"]
 ENCODER_DIMS = VISUALIZATION_PARAMETER["ENCODER_DIMS"]
 DECODER_DIMS = VISUALIZATION_PARAMETER["DECODER_DIMS"]
@@ -83,6 +83,7 @@ PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 
 VIS_MODEL_NAME = VISUALIZATION_PARAMETER["VIS_MODEL_NAME"]
+VIS_MODEL_NAME = 'tvi'
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
 # Define hyperparameters
@@ -112,6 +113,7 @@ _a, _b = find_ab_params(1.0, min_dist)
 umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
 recon_loss_fn = ReconstructionLoss(beta=1.0)
 single_loss_fn = SingleVisLoss(umap_loss_fn, recon_loss_fn, lambd=LAMBDA1)
+MI_loss = MINE().to(DEVICE)
 # Define Projector
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
@@ -122,13 +124,12 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     # Define DVI Loss
     if start_flag:
         temporal_loss_fn = DummyTemporalLoss(DEVICE)
-        criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
+        criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0, device=DEVICE)
         start_flag = 0
     else:
         # TODO AL mode, redefine train_representation
         prev_data = data_provider.train_representation(iteration-EPOCH_PERIOD)
         curr_data = data_provider.train_representation(iteration)
-        curr_data = curr_data.reshape(curr_data.shape[0], -1) 
         npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
         temporal_loss_fn = TemporalLoss(w_prev, DEVICE)
         criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=LAMBDA2*npr,device=DEVICE)
@@ -137,8 +138,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
     # Define Edge dataset
     t0 = time.time()
-    # spatial_cons = SingleEpochSpatialEdgeMapperConstructor(data_provider,net, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
-    spatial_cons = SingleEpochSpatialInterpolatedEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
+    spatial_cons = SingleEpochSpatialEdgeConstructorTVI(data_provider, net, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS)
     edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
     t1 = time.time()
 
@@ -162,9 +162,10 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     #                                                       TRAIN                                                          #
     ########################################################################################################################
 
-    trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
+    trainer = DVIReFineTrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE,data = data_provider.border_representation(EPOCH_START))
 
     t2=time.time()
+    #TODO PATIENT
     trainer.train(PATIENT, MAX_EPOCH)
     t3 = time.time()
 
@@ -209,5 +210,5 @@ for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
 # eval_epochs = EVAL_EPOCH_DICT[DATASET]
 # evaluator = Evaluator(data_provider, projector)
 
-# # for eval_epoch in eval_epochs
-# evaluator.save_epoch_eval(EPOCH_START, 15, temporal_k=5, file_name="{}".format(EVALUATION_NAME))
+# for eval_epoch in eval_epochs:
+#     evaluator.save_epoch_eval(eval_epoch, 15, temporal_k=5, file_name="{}".format(EVALUATION_NAME))
