@@ -554,7 +554,7 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
             metric="euclidean",
             random_state=random_state,
             knn_indices=knn_indices,
-            knn_dists=knn_dists,
+            knn_dists=knn_dists
         )
         return bw_complex, sigmas, rhos, knn_indices
 
@@ -1094,7 +1094,7 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
             ori_border_centers = np.load(os.path.join(self.data_provider.content_path,"Model", "Epoch_{:d}".format(self.iteration), "ori_border_centers.npy"))
             border_centers_ = self.adv_gen(ori_border_centers,0.05,15)
       
-            border_centers_index = self.if_border(border_centers_, bar=0.05)
+            border_centers_index = self.if_border(border_centers_, bar=0.1)
             border_centers_ = border_centers_[border_centers_index == 1]
             border_centers = np.concatenate((border_centers, border_centers_,),axis=0)
             print("ssss",border_centers.shape)
