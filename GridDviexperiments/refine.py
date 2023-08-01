@@ -53,7 +53,7 @@ CLASSES = config["CLASSES"]
 DATASET = config["DATASET"]
 PREPROCESS = config["VISUALIZATION"]["PREPROCESS"]
 GPU_ID = config["GPU"]
-GPU_ID = 1
+GPU_ID = 0
 EPOCH_START = config["EPOCH_START"]
 EPOCH_END = config["EPOCH_END"]
 EPOCH_PERIOD = config["EPOCH_PERIOD"]
@@ -126,6 +126,10 @@ pre_model.to(DEVICE)
 """get high dimensional grid, 2d grid embedding and border vector"""
 
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=base_model, device=DEVICE)  
+em1 = projector.batch_project(epoch, np.concatenate((data_provider.train_representation(epoch),data_provider.border_representation(epoch) )))
+
+em1_rev = projector.batch_inverse(epoch, em1)
+
 vis = visualizer(data_provider, projector, 200, "tab10")
 grid_high, grid_emd ,border = vis.get_epoch_decision_view(epoch,400,None, True)
 train_data_embedding = projector.batch_project(epoch, data_provider.train_representation(epoch))
@@ -286,7 +290,7 @@ class DVIReFineTrainer(SingleVisTrainer):
             recoverposition_losses.append(pos_loss.mean().item())
             # ===================backward====================
             recoverposition_loss = sum(recoverposition_losses) / len(recoverposition_losses)
-            loss_new = loss + 10 * recoverposition_loss
+            loss_new = loss + 1 * recoverposition_loss
             self.optimizer.zero_grad()
             loss_new.mean().backward()
             # pos_loss.mean().backward()
@@ -316,7 +320,11 @@ class DVIReFineTrainer(SingleVisTrainer):
 
 # from singleVis.trainer import DVIReFineTrainer
 # data_ = np.concatenate((data_provider.border_representation(epoch), grid_high), axis=0)
-data_ = grid_high[selected_indices]
+# data_ = grid_high[border_indices]
+
+data_ = em1_rev
+
+
 
 trainer = DVIReFineTrainer(pre_model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, data_, disable_encoder_grad = True)
 

@@ -6,6 +6,11 @@ import json
 from tqdm import tqdm
 import torch
 from singleVis.losses import PositionRecoverLoss
+from torch.utils.data import DataLoader, WeightedRandomSampler
+import copy
+
+torch.manual_seed(0)  # 使用固定的种子
+torch.cuda.manual_seed_all(0)
 
 """
 1. construct a spatio-temporal complex
@@ -69,6 +74,11 @@ class TrainerAbstractClass(ABC):
         pass
 
 
+class ActiveLearningEdgeLoader(DataLoader):
+    def __init__(self, dataset, weights, batch_size=32, **kwargs):
+        # Create a WeightedRandomSampler to select samples based on weights
+        sampler = WeightedRandomSampler(weights, len(dataset))
+        super().__init__(dataset, batch_size=batch_size, sampler=sampler, **kwargs)
 
 class SingleVisTrainer(TrainerAbstractClass):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE):
@@ -198,6 +208,10 @@ class SingleVisTrainer(TrainerAbstractClass):
             json.dump(evaluation, f)
 
 
+    
+
+
+
 class HybridVisTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
@@ -257,15 +271,59 @@ class HybridVisTrainer(SingleVisTrainer):
 
 def disable_grad(model):
     for param in model.parameters():
-        param.requires_grad = False       
+        param.requires_grad = False    
 
-class DVITrainer(SingleVisTrainer):
+
+# retrain with full data every RE_TRAINING_INTERVAL epochs
+RE_TRAINING_INTERVAL = 10
+
+class ActiveLearningTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE):
-        super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
-
+        self.model = model
+        self.model = self.model.to(device=DEVICE)
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.lr_scheduler = lr_scheduler
+        self.DEVICE = DEVICE
+        self.edge_loader = edge_loader
+        self._loss = 100.0
 
     
-    def train_step(self):
+     
+
+class DVIALTrainer(SingleVisTrainer):
+    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE):
+        super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
+        self.is_first_active_learning = True  # Add this line
+        
+        
+
+    def evaluate_loss(self):
+        print("evluating")
+        # This method calculates the loss of each sample in the dataset.
+        # It returns a list of losses and updates the edge loader with the inverse of these losses as weights.
+        losses = []
+        # Ensure the model is in evaluation mode
+        self.model.eval()
+        with torch.no_grad():
+            for data in self.edge_loader:
+                edge_to, edge_from, a_to, a_from = data
+                edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
+                edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
+                a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
+                a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
+                outputs = self.model(edge_to, edge_from)
+                _, _,_, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
+                losses.append(loss.item())
+        # We use the inverse of the loss as the weight, so the samples with higher loss will have higher chance to be selected.
+        weights = 1.0 / torch.tensor(losses, dtype=torch.float32)
+        # Normalize the weights so they sum to 1
+        weights = weights / weights.sum()
+        # Update the edge loader
+        new_loader = ActiveLearningEdgeLoader(self.edge_loader.dataset, weights, batch_size=self.edge_loader.batch_size)
+        return losses,new_loader
+    
+    def train_step(self, edge_loader ):
         self.model = self.model.to(device=self.DEVICE)
 
         self.model.train()
@@ -275,7 +333,7 @@ class DVITrainer(SingleVisTrainer):
         temporal_losses = []
 
 
-        t = tqdm(self.edge_loader, leave=True, total=len(self.edge_loader))
+        t = tqdm(edge_loader, leave=True, total=len(edge_loader))
         
         for data in t:
             edge_to, edge_from, a_to, a_from = data
@@ -305,6 +363,62 @@ class DVITrainer(SingleVisTrainer):
                                                                 sum(temporal_losses) / len(temporal_losses),
                                                                 sum(all_loss) / len(all_loss)))
         return self.loss
+    
+    def run_epoch(self, epoch, is_active_learning=False, is_full_data=False):
+        print("====================\nepoch:{}\n===================".format(epoch+1))
+        start_time = time.time()
+
+        if is_active_learning and is_full_data == False:
+            _, current_loader = self.evaluate_loss()
+            # Adjust learning rate for active learning
+            if self.is_first_active_learning:
+                print("change learning rate")
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] *= 0.1  # or set to any value you want
+                self.is_first_active_learning = False
+            
+        prev_loss = self.loss
+
+        if is_full_data:
+            print("full data")
+            loss = self.train_step(self.edge_loader)  # use DVITrainer's train_step
+        else:
+            loss = self.train_step(current_loader)  # use DVITrainer's train_step
+        
+        self.lr_scheduler.step()
+
+        elapsed_time = time.time() - start_time
+        print("Epoch completed in: {:.2f} seconds".format(elapsed_time))
+
+        return prev_loss, loss
+    
+    def train(self, PATIENT, MAX_EPOCH_NUMS):
+        print("ininin in dvi")
+        patient = PATIENT
+        time_start = time.time()
+        # Pretraining
+        for epoch in range(9):
+            print("Pretraining")
+            _, _ = self.run_epoch(epoch, is_active_learning=False,is_full_data=True )
+
+
+        for epoch in range(MAX_EPOCH_NUMS):
+            print("In active learning")
+            # is_full_data = (epoch % 3 == 0)  # retrain with full data every RE_TRAINING_INTERVAL epochs
+            prev_loss, loss = self.run_epoch(epoch, is_active_learning=True, is_full_data=False)
+      
+            # Early stop, check whether converge or not
+            if abs(prev_loss - loss) < 5E-3:
+                if patient == 0:
+                    break
+                else:
+                    patient -= 1
+            else:
+                patient = PATIENT
+
+        time_end = time.time()
+        time_spend = time_end - time_start
+        print("Time spend: {:.2f} for training vis model...".format(time_spend))   
         
     
     def record_time(self, save_dir, file_name, operation, iteration, t):
@@ -322,7 +436,157 @@ class DVITrainer(SingleVisTrainer):
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
 
+class DVITrainer(SingleVisTrainer):
+    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader,DEVICE,train_data, high_bom):
+        super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
+        self.train_data = train_data
+        train_data = torch.Tensor(self.train_data)
+        self.train_center = train_data.mean(dim=0)
 
+        self.high_bom = high_bom
+
+    
+    def train_step(self):
+        self.model = self.model.to(device=self.DEVICE)
+        self.model.train()
+        all_loss = []
+        umap_losses = []
+        recon_losses = []
+        temporal_losses = []
+
+        t = tqdm(self.edge_loader, leave=True, total=len(self.edge_loader))
+        
+        for data in t:
+            edge_to, edge_from, a_to, a_from = data
+
+            edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
+            edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
+            a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
+            a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
+
+        
+            # center_2d_embed = self.model.encoder(self.train_center.to(self.DEVICE)).to(self.DEVICE)
+            # new_emb = self.model.encoder(torch.Tensor(self.high_bom).to(self.DEVICE)).to(self.DEVICE)
+            # radius_loss = self.radius_loss(new_emb, center_2d_embed)
+
+            # train_data_emb = self.model.encoder(torch.Tensor(self.train_data).to(self.DEVICE)).to(self.DEVICE)
+
+            # distance_order_loss = self.distance_order_loss(torch.Tensor(self.train_data).to(self.DEVICE), train_data_emb, self.train_center.to(self.DEVICE),center_2d_embed)
+
+            # orthogonal_loss = self.orthogonal_loss(new_emb)
+
+
+            outputs = self.model(edge_to, edge_from)
+            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
+            loss_new = loss 
+            # + 1 * radius_loss + orthogonal_loss
+
+            # + distance_order_loss
+            all_loss.append(loss.item())
+            umap_losses.append(umap_l.item())
+            recon_losses.append(recon_l.item())
+            temporal_losses.append(temporal_l.item())
+            # ===================backward====================
+            self.optimizer.zero_grad()
+            loss_new.backward()
+            self.optimizer.step()
+        self._loss = sum(all_loss) / len(all_loss)
+        self.model.eval()
+        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f},radius_loss:{},distance_order_loss:{},orthogonal_loss:{}'.format(sum(umap_losses) / len(umap_losses),
+                                                                sum(recon_losses) / len(recon_losses),
+                                                                sum(temporal_losses) / len(temporal_losses),
+                                                                sum(all_loss) / len(all_loss),0,0,0))
+        return self.loss
+    
+    # def radius_loss(self,embeddings, center, alpha=1.0):
+    #     """
+    #     Radius loss function.
+    #     Args:
+    #         embeddings: the 2D embeddings, tensor of shape (N, 2)
+    #         center: the center of the circle in the 2D space, tensor of shape (2,)
+    #         alpha: a coefficient for the radius loss, controlling its importance.
+    #     Returns:
+    #         A scalar tensor representing the radius loss.
+    #     """
+    #     radii = torch.norm(embeddings - center, dim=1)
+    #     normalized_radii = torch.nn.functional.normalize(radii, dim=0, p=2)
+    #     normalized_mean_radii = torch.mean(normalized_radii)
+
+    #     return alpha * normalized_mean_radii
+    
+    def radius_loss(self, embeddings, center, alpha=1.0):
+        """
+        Modified radius loss function that tries to maximize the average distance.
+        Args:
+            embeddings: the 2D embeddings, tensor of shape (N, 2)
+            center: the center of the circle in the 2D space, tensor of shape (2,)
+            alpha: a coefficient for the radius loss, controlling its importance.
+        Returns:
+            A scalar tensor representing the radius loss.
+        """
+        radii = torch.norm(embeddings - center, dim=1)
+        normalized_radii = torch.nn.functional.normalize(radii, dim=0, p=2)
+        normalized_mean_radii = torch.mean(normalized_radii)
+
+        return -alpha * normalized_mean_radii
+    
+    def orthogonal_loss(self, embeddings, beta=0.001):
+        """
+        Orthogonal loss function that tries to decorrelate the embeddings.
+        Args:
+            embeddings: the 2D embeddings, tensor of shape (N, 2)
+            beta: a coefficient for the orthogonal loss, controlling its importance.
+        Returns:
+            A scalar tensor representing the orthogonal loss.
+        """
+        gram_matrix = torch.mm(embeddings, embeddings.t())
+        identity = torch.eye(embeddings.shape[0]).to(embeddings.device)
+        loss = torch.norm(gram_matrix - identity)
+        return beta * loss
+
+    
+    def distance_order_loss(self,high_embeddings, low_embeddings, high_center, low_center, beta=0.001):
+        """
+        Distance order preserving loss function.
+        Args:
+            high_embeddings: the high-dimensional embeddings, tensor of shape (N, D)
+            low_embeddings: the 2D embeddings, tensor of shape (N, 2)
+            high_center: the center of the sphere in the high-dimensional space, tensor of shape (D,)
+            low_center: the center of the circle in the 2D space, tensor of shape (2,)
+            beta: a coefficient for the distance order loss, controlling its importance.
+        Returns:
+            A scalar tensor representing the distance order loss.
+        """
+        high_distances = torch.norm(high_embeddings - high_center, dim=1)
+        low_distances = torch.norm(low_embeddings - low_center, dim=1)
+
+        high_order = torch.argsort(high_distances)
+        low_order = torch.argsort(low_distances)
+        high_order = high_order.float()
+        low_order = low_order.float()
+
+        # loss = torch.norm(high_order - low_order)
+        loss = torch.norm(high_order - low_order) / high_order.shape[0]
+        # loss = torch.sigmoid(torch.norm(high_order - low_order) / high_order.shape[0])
+
+
+        return beta * loss
+    
+    
+    def record_time(self, save_dir, file_name, operation, iteration, t):
+        # save result
+        save_file = os.path.join(save_dir, file_name+".json")
+        if not os.path.exists(save_file):
+            evaluation = dict()
+        else:
+            f = open(save_file, "r")
+            evaluation = json.load(f)
+            f.close()
+        if operation not in evaluation.keys():
+            evaluation[operation] = dict()
+        evaluation[operation][iteration] = round(t, 3)
+        with open(save_file, 'w') as f:
+            json.dump(evaluation, f)
 class DVIActiveLearningTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)

@@ -39,7 +39,7 @@ parser.add_argument('--content_path', type=str)
 parser.add_argument('--epoch', type=int)
 # parser.add_argument('--epoch_end', type=int)
 parser.add_argument('--epoch_period', type=int,default=1)
-parser.add_argument('--preprocess', type=int,default=1)
+parser.add_argument('--preprocess', type=int,default=0)
 args = parser.parse_args()
 
 CONTENT_PATH = args.content_path
@@ -106,8 +106,10 @@ if PREPROCESS:
 # Define visualization models
 
 
-ENCODER_DIMS_LIST = [[512,256,256,256],[256,256,256,128],[128,128,64,2]]
-DECODER_DIMS_LIST = [[256,256,256,512],[128,256,256,256],[2,64,128,128]]
+ENCODER_DIMS_LIST = [[512,256,256,256,256,2],[2,2,2,2],[2,2,2,2,2]]
+DECODER_DIMS_LIST = [[2,256,256,256,256,512],[2,2,2,2],[2,2,2,2,2]]
+
+DIM_LIST = [256,128,2]
 
 
 
@@ -135,7 +137,8 @@ start_flag = 1
 for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
     
-    for i in range(2,len(ENCODER_DIMS_LIST)):
+    for i in range(len(ENCODER_DIMS_LIST)):
+        CUR_DIM = DIM_LIST[i]
         print("start for level{}".format(i+1))
         model = VisModel(ENCODER_DIMS_LIST[i], DECODER_DIMS_LIST[i])
         project_l = projects[:i]
@@ -156,7 +159,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
         # Define Edge dataset
         t0 = time.time()
-        spatial_cons = SingleEpochSpatialEdgeConstructorLEVEL(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS,project_l)
+        spatial_cons = SingleEpochSpatialEdgeConstructorLEVEL(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS,project_l,CUR_DIM)
         edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
         t1 = time.time()
 
@@ -180,7 +183,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         #                                                       TRAIN                                                          #
         ########################################################################################################################
 
-        trainer = DVIReFineTrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE,data = data_provider.border_representation(EPOCH_START))
+        trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
 
         t2=time.time()
         trainer.train(PATIENT, MAX_EPOCH)

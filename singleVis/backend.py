@@ -8,6 +8,7 @@ import numpy as np
 import tensorflow as tf
 from scipy.special import softmax
 from pynndescent import NNDescent
+import scipy
 
 
 def get_graph_elements(graph_, n_epochs):
@@ -51,7 +52,7 @@ def get_graph_elements(graph_, n_epochs):
             n_epochs = 200
     # remove elements with very low probability
     if len(graph.data) >0:
-        graph.data[graph.data < (graph.data.max() / float(n_epochs)) + 1e-5] = 0.0
+        graph.data[graph.data < (graph.data.max() / float(n_epochs)) + 1e-3] = 0.0
         graph.eliminate_zeros()
 
     head = graph.row
@@ -61,6 +62,10 @@ def get_graph_elements(graph_, n_epochs):
     weight = graph.data
 
     return graph, head, tail, weight, n_vertices
+
+
+
+
 
 
 def convert_distance_to_probability(distances, a=1.0, b=1.0):

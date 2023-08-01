@@ -3,6 +3,11 @@ import torch
 from torch import nn
 from singleVis.backend import compute_cross_entropy_tf, convert_distance_to_probability, compute_cross_entropy
 
+import torch
+torch.manual_seed(0)  # 使用固定的种子
+torch.cuda.manual_seed_all(0)
+# Set the random seed for numpy
+
 """Losses modules for preserving four propertes"""
 # https://github.com/ynjnpa/VocGAN/blob/5339ee1d46b8337205bec5e921897de30a9211a1/utils/stft_loss.py for losses module
 
@@ -39,6 +44,7 @@ class UmapLoss(nn.Module):
         repeat_neg = torch.repeat_interleave(embedding_from, self._negative_sample_rate, dim=0)
         randperm = torch.randperm(repeat_neg.shape[0])
         embedding_neg_from = repeat_neg[randperm]
+        
 
         #  distances between samples (and negative samples)
         distance_embedding = torch.cat(
