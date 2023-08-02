@@ -1200,9 +1200,6 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
         # ori_border_centers = np.load(os.path.join(self.data_provider.content_path,"Model", "Epoch_{:d}".format(self.iteration), "ori_border_centers.npy"))
 
 
-        
-
-
         # training_data_path = os.path.join(self.data_provider.content_path, "Training_data")
         # training_data = torch.load(os.path.join(training_data_path, "training_dataset_data.pth"),
         #                            map_location="cpu")
@@ -1268,10 +1265,15 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
             edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, bw_complex,ske_complex)
             feature_vectors = np.concatenate((train_data, border_centers,self.skeleton_sample ), axis=0)
             pred_model = self.data_provider.prediction_function(self.iteration)
-            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
+            attention = get_attention(pred_model, feature_vectors, temperature=.001, device=self.data_provider.DEVICE, verbose=1)
+            # 调整 self.skeleton_sample 的权重
+            # increase_factor = 1.5  # 你希望增加的权重的系数
+            # attention[-len(self.skeleton_sample):] *= increase_factor
+
+            # 保证归一化的条件
+            attention /= attention.sum()
             # attention = np.zeros(feature_vectors.shape)
         elif self.b_n_epochs == 0:
-            print("hahahaha")
             complex, _, _, _ = self._construct_fuzzy_complex(train_data)
             edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, None)
             feature_vectors = np.copy(train_data)
@@ -1284,32 +1286,23 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
         return edge_to, edge_from, weight, feature_vectors, attention
     
     def adv_gen(self,data,noise_scale=0.05, surrond_num=10):
-        # # 定义噪声的大小
+            # # define the noise sclae
             noise_scale = noise_scale
-
-            # # 存储增强图像的列表
+            # # the enhanced image list
             enhanced_images = []
-
-            # # 为每张原始图像生成10个含有噪声的版本
+            # # add n version noise image for each image
             for _ in range(surrond_num):
-                # 复制原始数据
+                # copy original data
                 perturbed_images = np.copy(data)
-
-                # 添加高斯噪声
+                # add Gussian noise
                 noise = np.random.normal(loc=0, scale=noise_scale, size=perturbed_images.shape)
                 perturbed_images += noise
-
-                # 确保所有的像素值都在合理的范围内 (例如, 0 到 1)
+                # make sure all the pxiels will be put in the range of 0 to 1
                 np.clip(perturbed_images, 0, 1, out=perturbed_images)
-    
-                # 添加到列表
                 enhanced_images.append(perturbed_images)
-
-           
             enhanced_images = np.concatenate(enhanced_images, axis=0)
-            print("enhanced_images",enhanced_images.shape)
+            print("the shape of enhanced_images",enhanced_images.shape)
             # enhanced_images = enhanced_images.to(self.DEVICE)
-
             enhanced_images = torch.Tensor(enhanced_images)
             enhanced_images = enhanced_images.to(self.data_provider.DEVICE)
             

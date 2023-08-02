@@ -20,10 +20,11 @@ from singleVis.edge_dataset import DVIDataHandler
 from singleVis.trainer import DVITrainer
 from singleVis.data import NormalDataProvider
 from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
-from singleVis.skeleton_generator import SkeletonGenerator
+
 from singleVis.projector import DVIProjector
-from singleVis.eval.evaluator import Evaluator
 from singleVis.utils import find_neighbor_preserving_rate
+
+from trustVis.skeleton_generator import SkeletonGenerator
 ########################################################################################################################
 #                                                     DVI PARAMETERS                                                   #
 ########################################################################################################################
@@ -92,7 +93,7 @@ N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 
-VIS_MODEL_NAME = VISUALIZATION_PARAMETER["VIS_MODEL_NAME"]
+VIS_MODEL_NAME = 'trustvis'
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
 # Define hyperparameters
@@ -149,9 +150,10 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     # Define Edge dataset
     t0 = time.time()
     ###### generate the skeleton
-    skeleton_generator = SkeletonGenerator(data_provider,EPOCH_START)
+    skeleton_generator = SkeletonGenerator(data_provider,EPOCH_START,interval=40,base_num_samples=250)
 
     high_bom = skeleton_generator.skeleton_gen()
+    print("high_bom size",high_bom.shape)
     
 
 
