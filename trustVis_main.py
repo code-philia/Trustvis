@@ -152,7 +152,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     ###### generate the skeleton
     skeleton_generator = SkeletonGenerator(data_provider,EPOCH_START,base_num_samples=250)
     #TODO
-    high_bom = skeleton_generator.skeleton_gen_union()
+    
+    high_bom = skeleton_generator.skeleton_gen_use_perturb()
     print("high_bom size",high_bom.shape)
     
 

@@ -117,7 +117,7 @@ class SkeletonGenerator:
         print("radius,radius",radius)
 
         min_radius_log = np.log10(1e-3)
-        max_radius_log = np.log10(radius.item() * 1.1)
+        max_radius_log = np.log10(radius.item() * 1)
         # *****************************************************************************************
         # generate 100 points in log space 
         radii_log = np.linspace(max_radius_log, min_radius_log, self.interval)
@@ -131,7 +131,7 @@ class SkeletonGenerator:
             # calculate the log surface area for the current radius
             # convert it back to the original scale
             # calculate the number of samples
-            num_samples = int(self.base_num_samples * (1+r) // 2)
+            num_samples = int(self.base_num_samples * r // 2)
             num_samples_per_radius_l.append(num_samples)
         
 
@@ -175,6 +175,54 @@ class SkeletonGenerator:
 
       
         return high_bom
+    
+    def skeleton_gen_use_perturb(self, epsilon=1e-3):
+        torch.manual_seed(0)  # freeze the random seed
+        torch.cuda.manual_seed_all(0)
+        np.random.seed(0)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+        train_data = self.data_provider.train_representation(epoch=self.epoch)
+        train_data = torch.Tensor(train_data)
+        center = train_data.mean(dim=0)
+
+        # calculate the furthest distance
+        max_radius = ((train_data - center)**2).sum(dim=1).max().sqrt().item()
+        min_radius = 1e-3  # this is your minimum radius
+     
+        
+        interval = int(max_radius * 12.8)
+        print("max_radius", max_radius,"interval",interval)
+
+        # split the interval between max_radius and min_radius into 100 parts
+        radii = np.linspace(max_radius, min_radius, interval)
+
+
+        high_bom_samples = []
+        train_data_distances = ((train_data - center)**2).sum(dim=1).sqrt().cpu().detach().numpy()
+        print(train_data_distances)
+
+        for r in radii:
+            # find the training data that is close to the current radius
+            close_points_indices = np.where(np.abs(train_data_distances - r) < epsilon)[0]
+            close_points = train_data[close_points_indices]
+    
+            # calculate the unit vector from center to the points
+            direction_to_center = (close_points - center) / torch.norm(close_points - center, dim=1, keepdim=True)
+    
+            # add a small perturbation along the direction to the center to get the proxies on the sphere with radius r
+            noise = direction_to_center * epsilon
+            # noise = direction_to_center * torch.randn_like(close_points) * epsilon
+            proxies = (close_points + noise).cpu().detach().numpy()
+    
+            # add the proxies to the skeleton
+            high_bom_samples.append(proxies)
+        # concatenate all the samples to get the final skeleton
+        high_bom = np.concatenate(high_bom_samples, axis=0)
+
+        return high_bom
+
     
     def create_decreasing_array(self,min_val, max_val, levels, factor=0.8):
         # Calculate the total range
