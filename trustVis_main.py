@@ -93,7 +93,7 @@ N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 
-VIS_MODEL_NAME = 'trustvis'
+VIS_MODEL_NAME = 'trustvis_'
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
 # Define hyperparameters
@@ -150,9 +150,9 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     # Define Edge dataset
     t0 = time.time()
     ###### generate the skeleton
-    skeleton_generator = SkeletonGenerator(data_provider,EPOCH_START,interval=40,base_num_samples=250)
-
-    high_bom = skeleton_generator.skeleton_gen()
+    skeleton_generator = SkeletonGenerator(data_provider,EPOCH_START,base_num_samples=250)
+    #TODO
+    high_bom = skeleton_generator.skeleton_gen_union()
     print("high_bom size",high_bom.shape)
     
 
