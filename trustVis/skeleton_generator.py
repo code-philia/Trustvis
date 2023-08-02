@@ -56,7 +56,7 @@ class SkeletonGenerator:
 
         radii = [radius*1.1, radius, radius / 2, radius / 4, radius / 10, 1e-3]  # radii at which to sample points
         # num_samples_per_radius_l = [500, 500, 500, 500, 500, 500]  # number of samples per radius
-        aaa = 1000
+        aaa = 500
         num_samples_per_radius_l = [aaa, aaa, aaa, aaa, aaa, aaa]  # number of samples per radius
         print("num_samples_per_radius_l",radii)
         print("num_samples_per_radius_l",num_samples_per_radius_l)

@@ -448,14 +448,10 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         # knn_dists, knn_indices = high_neigh.kneighbors(fitting_data, n_neighbors=self.n_neighbors, return_distance=True)
         print("?????")
         # knn_dists = np.exp(knn_dists) - 1
-        
-
         # pred_dists = self.get_pred_diff(train_data,train_data, knn_indices,epoch)
         
         # knn_dists = 1 * knn_dists + 1 * pred_dists
         # knn_dists = 10 * pred_dists
-     
-
         random_state = check_random_state(42)
         complex, sigmas, rhos = fuzzy_simplicial_set(
             X=train_data,
@@ -1258,6 +1254,7 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
             # border_centers = np.concatenate((border_centers, border_centers_,),axis=0)
             # print("ssss",border_centers.shape)
             border_centers = np.concatenate((border_centers,self.skeleton_sample),axis=0)
+            
             ske_complex, _, _, _ = self._construct_fuzzy_complex(self.skeleton_sample, self.iteration)
             complex, _, _, _ = self._construct_fuzzy_complex(train_data, self.iteration)
             bw_complex, _, _, _ = self._construct_boundary_wise_complex(train_data, border_centers,self.iteration)
@@ -1265,13 +1262,13 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
             edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, bw_complex,ske_complex)
             feature_vectors = np.concatenate((train_data, border_centers,self.skeleton_sample ), axis=0)
             pred_model = self.data_provider.prediction_function(self.iteration)
-            attention = get_attention(pred_model, feature_vectors, temperature=.001, device=self.data_provider.DEVICE, verbose=1)
+            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
             # 调整 self.skeleton_sample 的权重
             # increase_factor = 1.5  # 你希望增加的权重的系数
             # attention[-len(self.skeleton_sample):] *= increase_factor
 
             # 保证归一化的条件
-            attention /= attention.sum()
+            # attention /= attention.sum()
             # attention = np.zeros(feature_vectors.shape)
         elif self.b_n_epochs == 0:
             complex, _, _, _ = self._construct_fuzzy_complex(train_data)
