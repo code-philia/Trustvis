@@ -176,12 +176,13 @@ class SkeletonGenerator:
       
         return high_bom
     
-    def skeleton_gen_use_perturb(self, epsilon=1e-3):
+    def skeleton_gen_use_perturb(self, _epsilon=1e-3, tor=1e-1):
         torch.manual_seed(0)  # freeze the random seed
         torch.cuda.manual_seed_all(0)
         np.random.seed(0)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+        epsilon = _epsilon
 
         train_data = self.data_provider.train_representation(epoch=self.epoch)
         train_data = torch.Tensor(train_data)
@@ -192,6 +193,7 @@ class SkeletonGenerator:
         min_radius = 1e-3  # this is your minimum radius
      
         
+        # interval = int(max_radius * 12.8) #MINNIST and CIFAR 10 
         interval = int(max_radius * 12.8)
         print("max_radius", max_radius,"interval",interval)
 
@@ -202,8 +204,12 @@ class SkeletonGenerator:
         high_bom_samples = []
         train_data_distances = ((train_data - center)**2).sum(dim=1).sqrt().cpu().detach().numpy()
         print(train_data_distances)
-
+        start_flag = 1
         for r in radii:
+            if start_flag:
+                  epsilon = tor
+                  start_flag = 0
+            else: epsilon = _epsilon
             # find the training data that is close to the current radius
             close_points_indices = np.where(np.abs(train_data_distances - r) < epsilon)[0]
             close_points = train_data[close_points_indices]
@@ -212,13 +218,13 @@ class SkeletonGenerator:
             direction_to_center = (close_points - center) / torch.norm(close_points - center, dim=1, keepdim=True)
     
             # add a small perturbation along the direction to the center to get the proxies on the sphere with radius r
-            noise = direction_to_center * epsilon
+            noise = direction_to_center * (epsilon / 2)
             # noise = direction_to_center * torch.randn_like(close_points) * epsilon
             proxies = (close_points + noise).cpu().detach().numpy()
     
             # add the proxies to the skeleton
             high_bom_samples.append(proxies)
-        # concatenate all the samples to get the final skeleton
+        
         high_bom = np.concatenate(high_bom_samples, axis=0)
 
         return high_bom

@@ -88,30 +88,53 @@ class UmapLoss(nn.Module):
 #         # loss2 = torch.mean(torch.mean(torch.pow(edge_from - recon_from, 2), 1))
 #         return (loss1 + loss2)/2
 
+# class ReconstructionLoss(nn.Module):
+#     def __init__(self, beta=1.0, weight_loss1=0.5, weight_loss2=0.5, clip_val=None):
+#         super(ReconstructionLoss, self).__init__()
+#         self._beta = beta
+#         self.weight_loss1 = weight_loss1
+#         self.weight_loss2 = weight_loss2
+#         self.clip_val = clip_val
+
+#     def forward(self, edge_to, edge_from, recon_to, recon_from, a_to, a_from):
+#         # Compute weights
+#         weight_to = torch.pow((1+a_to), self._beta)
+#         weight_from = torch.pow((1+a_from), self._beta)
+        
+#         # Optional: Clip weights
+#         if self.clip_val is not None:
+#             weight_to = torch.clamp(weight_to, max=self.clip_val)
+#             weight_from = torch.clamp(weight_from, max=self.clip_val)
+        
+#         # Compute individual losses
+#         loss1 = torch.mean(torch.mean(torch.multiply(weight_to, torch.pow(edge_to - recon_to, 2)), 1))
+#         loss2 = torch.mean(torch.mean(torch.multiply(weight_from, torch.pow(edge_from - recon_from, 2)), 1))
+        
+#         # Return weighted sum of losses
+#         return self.weight_loss1 * loss1 + self.weight_loss2 * loss2
+
 class ReconstructionLoss(nn.Module):
-    def __init__(self, beta=1.0, weight_loss1=0.5, weight_loss2=0.5, clip_val=None):
+    def __init__(self, beta=1.0,alpha=0.5):
         super(ReconstructionLoss, self).__init__()
         self._beta = beta
-        self.weight_loss1 = weight_loss1
-        self.weight_loss2 = weight_loss2
-        self.clip_val = clip_val
+        self._alpha = alpha
 
     def forward(self, edge_to, edge_from, recon_to, recon_from, a_to, a_from):
-        # Compute weights
-        weight_to = torch.pow((1+a_to), self._beta)
-        weight_from = torch.pow((1+a_from), self._beta)
-        
-        # Optional: Clip weights
-        if self.clip_val is not None:
-            weight_to = torch.clamp(weight_to, max=self.clip_val)
-            weight_from = torch.clamp(weight_from, max=self.clip_val)
-        
-        # Compute individual losses
-        loss1 = torch.mean(torch.mean(torch.multiply(weight_to, torch.pow(edge_to - recon_to, 2)), 1))
-        loss2 = torch.mean(torch.mean(torch.multiply(weight_from, torch.pow(edge_from - recon_from, 2)), 1))
-        
-        # Return weighted sum of losses
-        return self.weight_loss1 * loss1 + self.weight_loss2 * loss2
+        loss1 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_to), self._beta), torch.pow(edge_to - recon_to, 2)), 1))
+        loss2 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_from), self._beta), torch.pow(edge_from - recon_from, 2)), 1))
+
+        # l1_loss1 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_to), self._beta), torch.abs(edge_to - recon_to)), 1))
+        # l1_loss2 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_from), self._beta), torch.abs(edge_from - recon_from)), 1))
+        # l2_loss1 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_to), self._beta), torch.pow(edge_to - recon_to, 2)), 1))
+        # l2_loss2 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_from), self._beta), torch.pow(edge_from - recon_from, 2)), 1))
+        # loss1 = self._alpha * l1_loss1 + (1 - self._alpha) * l2_loss1
+        # loss2 = self._alpha * l1_loss2 + (1 - self._alpha) * l2_loss2
+    
+
+        # without attention weights
+        # loss1 = torch.mean(torch.mean(torch.pow(edge_to - recon_to, 2), 1))
+        # loss2 = torch.mean(torch.mean(torch.pow(edge_from - recon_from, 2), 1))
+        return (loss1 + loss2)/2
 
 
 
