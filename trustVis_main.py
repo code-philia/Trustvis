@@ -17,7 +17,7 @@ from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
 from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss
 from singleVis.edge_dataset import DVIDataHandler
-from singleVis.trainer import DVITrainer
+from singleVis.trainer import DVITrainer,DVIALTrainer
 from singleVis.data import NormalDataProvider
 from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
 
@@ -152,8 +152,9 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     ###### generate the skeleton
     skeleton_generator = SkeletonGenerator(data_provider,EPOCH_START,base_num_samples=250)
     #TODO
-    
+    # high_bom2 = skeleton_generator.skeleton_gen()
     high_bom = skeleton_generator.skeleton_gen_use_perturb()
+    # high_bom = np.concatenate((high_bom,high_bom2),axis=0)
     print("high_bom size",high_bom.shape)
     
 
@@ -182,7 +183,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     #                                                       TRAIN                                                          #
     ########################################################################################################################
 
-    trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE,train_data=data_provider.train_representation(epoch=EPOCH_START),high_bom=high_bom)
+    trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
 
     t2=time.time()
     trainer.train(PATIENT, MAX_EPOCH)

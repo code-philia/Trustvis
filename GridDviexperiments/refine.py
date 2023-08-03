@@ -53,7 +53,7 @@ CLASSES = config["CLASSES"]
 DATASET = config["DATASET"]
 PREPROCESS = config["VISUALIZATION"]["PREPROCESS"]
 GPU_ID = config["GPU"]
-GPU_ID = 0
+GPU_ID = 1
 EPOCH_START = config["EPOCH_START"]
 EPOCH_END = config["EPOCH_END"]
 EPOCH_PERIOD = config["EPOCH_PERIOD"]
@@ -290,7 +290,7 @@ class DVIReFineTrainer(SingleVisTrainer):
             recoverposition_losses.append(pos_loss.mean().item())
             # ===================backward====================
             recoverposition_loss = sum(recoverposition_losses) / len(recoverposition_losses)
-            loss_new = loss + 1 * recoverposition_loss
+            loss_new = loss + 10 * recoverposition_loss
             self.optimizer.zero_grad()
             loss_new.mean().backward()
             # pos_loss.mean().backward()
@@ -320,9 +320,9 @@ class DVIReFineTrainer(SingleVisTrainer):
 
 # from singleVis.trainer import DVIReFineTrainer
 # data_ = np.concatenate((data_provider.border_representation(epoch), grid_high), axis=0)
-# data_ = grid_high[border_indices]
+data_ = grid_high[border_indices]
 
-data_ = em1_rev
+# data_ = em1_rev
 
 
 

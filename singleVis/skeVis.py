@@ -38,13 +38,14 @@ class VisualizerAbstractClass(ABC):
         pass
 
 class visualizer(VisualizerAbstractClass):
-    def __init__(self, data_provider, projector, resolution, cmap='tab10'):
+    def __init__(self, data_provider, projector, resolution, cmap='tab10',color='black'):
         self.data_provider = data_provider
         self.projector = projector
         self.cmap = plt.get_cmap(cmap)
         self.classes = data_provider.classes
         self.class_num = len(self.classes)
         self.resolution= resolution
+        self._color = color
 
     def _init_plot(self, only_img=False):
         '''
@@ -90,6 +91,14 @@ class visualizer(VisualizerAbstractClass):
             plot = self.ax.plot([], [], '.', label="border", ms=8,
                     color="yellow", markeredgecolor=color, zorder=6, picker=mpl.rcParams['lines.markersize'])
             self.sample_plots.append(plot[0])
+        
+
+        for c in range(self.class_num):
+            color = self.cmap(c / (self.class_num - 1))
+            plot = self.ax.plot([], [], '.', label="center", ms=8,
+                    color=self._color, markeredgecolor=color, zorder=6, picker=mpl.rcParams['lines.markersize'])
+            self.sample_plots.append(plot[0])
+
 
   
 
@@ -303,14 +312,14 @@ class visualizer(VisualizerAbstractClass):
 
         if noOutline == True:
             for c in range(self.class_num):
-                data = embedding[np.logical_and(train_labels == c, border!=1)]
+                data = embedding[np.logical_and(train_labels == c, border!=1,border!=2)]
                 self.sample_plots[c].set_data(data.transpose())
             for c in range(self.class_num):
                 data = embedding[np.logical_and(train_labels == c, border==1)]
                 self.sample_plots[3*self.class_num + c].set_data(data.transpose())
         else: 
             for c in range(self.class_num):
-                data = embedding[np.logical_and(train_labels == c, border!=1)]
+                data = embedding[np.logical_and(train_labels == c, border!=1,border!=2)]
                 self.sample_plots[c].set_data(data.transpose())
             # for c in range(self.class_num):
             #     data = embedding[np.logical_and(train_labels == c, train_labels != pred, border!=1)]
@@ -321,6 +330,9 @@ class visualizer(VisualizerAbstractClass):
             for c in range(self.class_num):
                 data = embedding[np.logical_and(train_labels == c, border==1)]
                 self.sample_plots[3*self.class_num+ c].set_data(data.transpose())
+            for c in range(self.class_num):
+                data = embedding[np.logical_and(train_labels == c, border==2)]
+                self.sample_plots[4*self.class_num+ c].set_data(data.transpose())
 
 
 

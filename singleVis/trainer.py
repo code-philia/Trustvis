@@ -397,7 +397,7 @@ class DVIALTrainer(SingleVisTrainer):
         patient = PATIENT
         time_start = time.time()
         # Pretraining
-        for epoch in range(9):
+        for epoch in range(10):
             print("Pretraining")
             _, _ = self.run_epoch(epoch, is_active_learning=False,is_full_data=True )
 
@@ -437,14 +437,9 @@ class DVIALTrainer(SingleVisTrainer):
             json.dump(evaluation, f)
 
 class DVITrainer(SingleVisTrainer):
-    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader,DEVICE,train_data, high_bom):
+    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader,DEVICE):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
-        self.train_data = train_data
-        train_data = torch.Tensor(self.train_data)
-        self.train_center = train_data.mean(dim=0)
-
-        self.high_bom = high_bom
-
+    
     
     def train_step(self):
         self.model = self.model.to(device=self.DEVICE)
@@ -464,18 +459,6 @@ class DVITrainer(SingleVisTrainer):
             a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
             a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
 
-        
-            # center_2d_embed = self.model.encoder(self.train_center.to(self.DEVICE)).to(self.DEVICE)
-            # new_emb = self.model.encoder(torch.Tensor(self.high_bom).to(self.DEVICE)).to(self.DEVICE)
-            # radius_loss = self.radius_loss(new_emb, center_2d_embed)
-
-            # train_data_emb = self.model.encoder(torch.Tensor(self.train_data).to(self.DEVICE)).to(self.DEVICE)
-
-            # distance_order_loss = self.distance_order_loss(torch.Tensor(self.train_data).to(self.DEVICE), train_data_emb, self.train_center.to(self.DEVICE),center_2d_embed)
-
-            # orthogonal_loss = self.orthogonal_loss(new_emb)
-
-
             outputs = self.model(edge_to, edge_from)
             umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
             loss_new = loss 
@@ -492,10 +475,10 @@ class DVITrainer(SingleVisTrainer):
             self.optimizer.step()
         self._loss = sum(all_loss) / len(all_loss)
         self.model.eval()
-        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f},radius_loss:{},distance_order_loss:{},orthogonal_loss:{}'.format(sum(umap_losses) / len(umap_losses),
+        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
                                                                 sum(recon_losses) / len(recon_losses),
                                                                 sum(temporal_losses) / len(temporal_losses),
-                                                                sum(all_loss) / len(all_loss),0,0,0))
+                                                                sum(all_loss) / len(all_loss)))
         return self.loss
     
     # def radius_loss(self,embeddings, center, alpha=1.0):
