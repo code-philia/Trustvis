@@ -153,7 +153,7 @@ union_indices = np.union1d(selected_indices, border_indices)
 import time
 # train_list =  union_indices
 
-optimizer = torch.optim.Adam(pre_model.parameters(), lr=.005, weight_decay=1e-5)
+optimizer = torch.optim.Adam(pre_model.parameters(), lr=.05, weight_decay=1e-5)
 lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
 
 border_centers = data_provider.border_representation(epoch)
@@ -284,20 +284,20 @@ class DVIReFineTrainer(SingleVisTrainer):
             pos_loss = pos_recover_loss_fn(torch.Tensor(grid_high).to(self.DEVICE), torch.Tensor(self.data).to(self.DEVICE))
 
             all_loss.append(loss.mean().item())
-            umap_losses.append(umap_l.item())
+            # umap_losses.append(umap_l.item())
             recon_losses.append(recon_l.item())
             temporal_losses.append(temporal_l.mean().item())
             recoverposition_losses.append(pos_loss.mean().item())
             # ===================backward====================
             recoverposition_loss = sum(recoverposition_losses) / len(recoverposition_losses)
-            loss_new = loss + 10 * recoverposition_loss
+            loss_new = loss + 100 * recoverposition_loss
             self.optimizer.zero_grad()
             loss_new.mean().backward()
             # pos_loss.mean().backward()
             self.optimizer.step()
         self._loss = sum(all_loss) / len(all_loss)
         self.model.eval()
-        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f}\tecoverposition_losses:{}'.format(sum(umap_losses) / len(umap_losses),
+        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f}\tecoverposition_losses:{}'.format(sum(umap_losses),
                                                                 sum(recon_losses) / len(recon_losses),
                                                                 sum(temporal_losses) / len(temporal_losses),
                                                                 sum(all_loss) / len(all_loss), sum(recoverposition_losses) / len(all_loss)))
@@ -320,7 +320,7 @@ class DVIReFineTrainer(SingleVisTrainer):
 
 # from singleVis.trainer import DVIReFineTrainer
 # data_ = np.concatenate((data_provider.border_representation(epoch), grid_high), axis=0)
-data_ = grid_high[border_indices]
+data_ = grid_high[selected_indices][:100]
 
 # data_ = em1_rev
 

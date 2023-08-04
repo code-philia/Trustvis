@@ -491,27 +491,27 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         # 将扩增的数据转换为numpy数组
         X_perturbed = np.array(X_perturbed)
     
-    # def _construct_boundary_wise_complex(self, train_data, border_centers):
-    #     """compute the boundary wise complex
-    #         for each border point, we calculate its k nearest train points
-    #         for each train data, we calculate its k nearest border points
-    #     """
-    #     high_neigh = NearestNeighbors(n_neighbors=self.n_neighbors, radius=0.4)
-    #     high_neigh.fit(border_centers)
-    #     fitting_data = np.concatenate((train_data, border_centers), axis=0)
-    #     knn_dists, knn_indices = high_neigh.kneighbors(fitting_data, n_neighbors=self.n_neighbors, return_distance=True)
-    #     knn_indices = knn_indices + len(train_data)
+    def _construct_boundary_wise_complex_init(self, train_data, border_centers):
+        """compute the boundary wise complex
+            for each border point, we calculate its k nearest train points
+            for each train data, we calculate its k nearest border points
+        """
+        high_neigh = NearestNeighbors(n_neighbors=self.n_neighbors, radius=0.4)
+        high_neigh.fit(border_centers)
+        fitting_data = np.concatenate((train_data, border_centers), axis=0)
+        knn_dists, knn_indices = high_neigh.kneighbors(fitting_data, n_neighbors=self.n_neighbors, return_distance=True)
+        knn_indices = knn_indices + len(train_data)
 
-    #     random_state = check_random_state(None)
-    #     bw_complex, sigmas, rhos = fuzzy_simplicial_set(
-    #         X=fitting_data,
-    #         n_neighbors=self.n_neighbors,
-    #         metric="euclidean",
-    #         random_state=random_state,
-    #         knn_indices=knn_indices,
-    #         knn_dists=knn_dists,
-    #     )
-    #     return bw_complex, sigmas, rhos, knn_indices
+        random_state = check_random_state(None)
+        bw_complex, sigmas, rhos = fuzzy_simplicial_set(
+            X=fitting_data,
+            n_neighbors=self.n_neighbors,
+            metric="euclidean",
+            random_state=random_state,
+            knn_indices=knn_indices,
+            knn_dists=knn_dists,
+        )
+        return bw_complex, sigmas, rhos, knn_indices
     
 
     def if_border(self,data):
@@ -739,7 +739,7 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
 
 
         # get data from graph
-        if self.b_n_epochs == 0:
+        if bw_complex == None:
             return vr_head, vr_tail, vr_weight
         else:
             _, bw_head, bw_tail, bw_weight, _ = get_graph_elements(bw_complex, self.b_n_epochs)
@@ -1260,15 +1260,20 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
 
 
             #TODO
-            selected = np.random.choice(len(border_centers), int(0.1*len(border_centers)), replace=False)
-            border_centers = border_centers[selected]
+            # selected = np.random.choice(len(border_centers), int(0.1*len(border_centers)), replace=False)
+            # border_centers = border_centers[selected]
             border_centers = np.concatenate((border_centers,self.skeleton_sample),axis=0)
             # border_centers = self.skeleton_sample
-            ske_complex, _, _, _ = self._construct_fuzzy_complex(self.skeleton_sample, self.iteration)
+            
             complex, _, _, _ = self._construct_fuzzy_complex(train_data, self.iteration)
+            ## str1
+            ske_complex, _, _, _ = self._construct_fuzzy_complex(self.skeleton_sample, self.iteration)
             bw_complex, _, _, _ = self._construct_boundary_wise_complex(train_data, border_centers,self.iteration)
             # bws_complex,_,_,_ = self._construct_boundary_wise_complex_skeleton(train_data, self.space_border)
             edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, bw_complex,ske_complex)
+            ## str1
+            
+
             feature_vectors = np.concatenate((train_data, border_centers ), axis=0)
             pred_model = self.data_provider.prediction_function(self.iteration)
             attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
@@ -1465,7 +1470,7 @@ class SingleEpochSpatialEdgeConstructorForGrid(SpatialEdgeConstructor):
     def construct(self):
         # load train data and border centers
         train_data = self.data_provider.train_representation(self.iteration)
-        train_data = np.concatenate((train_data, self.grid_high), axis=0)
+        # train_data = np.concatenate((train_data, self.grid_high), axis=0)
 
         # sampleing = Sampleing(self.data_provider,self.iteration,self.data_provider.DEVICE)
         # indicates = sampleing.sample_data(train_data, 0.8)
@@ -1477,8 +1482,8 @@ class SingleEpochSpatialEdgeConstructorForGrid(SpatialEdgeConstructor):
 
         print("train_data",train_data.shape, "if only:", self.only_grid)
 
-        complex, _, _, _ = self._construct_fuzzy_complex(train_data)
-        edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, None)
+        complex, _, _, _ = self._construct_fuzzy_complex(train_data,self.iteration)
+        edge_to, edge_from, weight = self._construct_step_edge_dataset_wosk(complex, None)
         feature_vectors = np.copy(train_data)
         pred_model = self.data_provider.prediction_function(self.iteration)
         attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            

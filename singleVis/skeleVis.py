@@ -96,7 +96,7 @@ class visualizer(VisualizerAbstractClass):
         for c in range(self.class_num):
             color = self.cmap(c / (self.class_num - 1))
             plot = self.ax.plot([], [], '.', label="center", ms=8,
-                    color=self._color, markeredgecolor=color, zorder=6, picker=mpl.rcParams['lines.markersize'])
+                    color=self._color, markeredgecolor=self._color, zorder=6, picker=mpl.rcParams['lines.markersize'])
             self.sample_plots.append(plot[0])
 
 
