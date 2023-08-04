@@ -183,7 +183,7 @@ class SkeletonGenerator:
       
         return high_bom
     
-    def skeleton_gen_use_perturb(self, _epsilon=1e-2, tor=1e-2):
+    def skeleton_gen_use_perturb(self, _epsilon=1e-2, _per=0.7):
         """
         find the nearest training data for each radius, 
         and then generate new proxes by this add perturbation on these nearest training data
@@ -203,7 +203,7 @@ class SkeletonGenerator:
 
         # calculate the furthest distance
         max_radius = ((train_data - center)**2).sum(dim=1).max().sqrt().item()
-        min_radius = 1e-3  # this is your minimum radius
+        min_radius = max_radius  * _per  # this is your minimum radius
      
         
         # interval = int(max_radius * 12.8) #MINNIST and CIFAR 10 
@@ -271,7 +271,7 @@ class SkeletonGenerator:
 
 class CenterSkeletonGenerator:
     """SkeletonGenerator except allows for generate skeleton"""
-    def __init__(self, data_provider, epoch,distance_condition_val,variance_condition_val,min_cluster=200):
+    def __init__(self, data_provider, epoch,distance_condition_val,variance_condition_val,min_cluster=100):
         """
 
         """

@@ -24,7 +24,7 @@ from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
 from singleVis.projector import DVIProjector
 from singleVis.utils import find_neighbor_preserving_rate
 
-from trustVis.skeleton_generator import SkeletonGenerator
+from trustVis.skeleton_generator import SkeletonGenerator,CenterSkeletonGenerator
 ########################################################################################################################
 #                                                     DVI PARAMETERS                                                   #
 ########################################################################################################################
@@ -93,7 +93,7 @@ N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 
-VIS_MODEL_NAME = 'trustvis_'
+VIS_MODEL_NAME = 'trustvis_sk'
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
 # Define hyperparameters
@@ -153,8 +153,12 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     skeleton_generator = SkeletonGenerator(data_provider,EPOCH_START,base_num_samples=250)
     #TODO
     # high_bom2 = skeleton_generator.skeleton_gen()
-    high_bom = skeleton_generator.skeleton_gen_use_perturb()
-    # high_bom = np.concatenate((high_bom,high_bom2),axis=0)
+    # high_bom = skeleton_generator.skeleton_gen_use_perturb()
+    # high_bom = skeleton_generator.skeleton_gen_use_perturb(_epsilon=1e-3)
+    skeleton_generator = CenterSkeletonGenerator(data_provider,EPOCH_START,3,3,200)
+
+    high_bom = skeleton_generator.center_skeleton_genertaion()
+    
     print("high_bom size",high_bom.shape)
     
 

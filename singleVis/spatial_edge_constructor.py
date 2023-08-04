@@ -1260,8 +1260,8 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
 
 
             #TODO
-            # selected = np.random.choice(len(border_centers), int(0.1*len(border_centers)), replace=False)
-            # border_centers = border_centers[selected]
+            selected = np.random.choice(len(border_centers), int(0.1*len(border_centers)), replace=False)
+            border_centers = border_centers[selected]
             border_centers = np.concatenate((border_centers,self.skeleton_sample),axis=0)
             # border_centers = self.skeleton_sample
             
