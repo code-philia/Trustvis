@@ -288,8 +288,17 @@ class CenterSkeletonGenerator:
         kmeans.fit(data)
         centers = kmeans.cluster_centers_
         labels = kmeans.labels_
+        radii = []
+        for i in range(k):
+            cluster_data = data[labels == i]
+            if len(cluster_data) > 0:
+                # 计算每个点到中心的距离，然后取最大值
+                distances = np.sqrt(((cluster_data - centers[i]) ** 2).sum(axis=1))
+                radii.append(np.max(distances))
+            else:
+                radii.append(0)
         
-        return centers,labels
+        return centers,labels,radii
     
     def if_need_split(self, data):
         if len(data) < self.min_cluster:
@@ -305,34 +314,41 @@ class CenterSkeletonGenerator:
         return distance_condition or variance_condition
     
     def recursive_clustering(self, data,k=2):
-        centers, labels = self.gen_center(data, k=k)
+        centers, labels, radii = self.gen_center(data, k=k)
         all_centers = list(centers)  # Save intermediate centers
+        all_radii = list(radii)
     
         for label in set(labels):
             cluster = data[labels == label]
             if len(cluster):
                 if self.if_need_split(cluster):
-                    all_centers.extend(self.recursive_clustering(cluster, k=2))
-
+                    # all_centers.extend(self.recursive_clustering(cluster, k=2))
+                    sub_centers, sub_radii = self.recursive_clustering(cluster, k=2)
+                    all_centers.extend(sub_centers)
+                    all_radii.extend(sub_radii)
             
-            
-        return all_centers
+        return all_centers, all_radii
     
     
     def center_skeleton_genertaion(self):
         # Initial centers
         data = self.data_provider.train_representation(self.epoch)
-        centers_c, _ = self.gen_center(self.data_provider.train_representation(self.epoch),k=1)
-        centers_n, labels = self.gen_center(self.data_provider.train_representation(self.epoch),k=10)
+        centers_c, _, radii_c = self.gen_center(self.data_provider.train_representation(self.epoch),k=1)
+        centers_n, labels,radii_n = self.gen_center(self.data_provider.train_representation(self.epoch),k=10)
         print("finished init")
 
         # Recursive clustering
         # Recursive clustering with initial split into 10 clusters
         all_centers = []
+        all_radii = []  # 存储所有簇的最大半径
         for label in range(len(labels)):
             cluster = data[labels == label]
             if len(cluster):
-                all_centers.extend(self.recursive_clustering(cluster, k=2))
+                # all_centers.extend(self.recursive_clustering(cluster, k=2))
+                sub_centers, sub_radii = self.recursive_clustering(cluster, k=2)
+                all_centers.extend(sub_centers)
+                all_radii.extend(sub_radii)
             
         all_centers = np.array(all_centers)
-        return np.concatenate((centers_c,centers_n,all_centers),axis=0)
+        all_radii = np.array(all_radii)
+        return np.concatenate((centers_c,centers_n,all_centers),axis=0),np.concatenate((radii_c, radii_n, all_radii), axis=0)
