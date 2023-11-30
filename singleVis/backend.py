@@ -5,7 +5,6 @@ backend APIs for Single Visualization model trainer
 import torch
 import time
 import numpy as np
-import tensorflow as tf
 from scipy.special import softmax
 from pynndescent import NNDescent
 import scipy
@@ -108,19 +107,19 @@ def compute_cross_entropy(
     CE = attraction_term + repellent_term
     return attraction_term, repellent_term, CE
 
-def compute_cross_entropy_tf(
-        probabilities_graph, probabilities_distance, EPS=1e-4, repulsion_strength=1.0
-):
-    attraction_term = - probabilities_graph * tf.math.log(tf.clip_by_value(probabilities_distance, clip_value_min=EPS, clip_value_max=1.0))
-    repellent_term = (
-            -(1.0 - probabilities_graph)
-            * tf.math.log(tf.clip_by_value(1.0 - probabilities_distance, clip_value_min=EPS, clip_value_max=1.0))
-            * repulsion_strength
-    )
+# def compute_cross_entropy_tf(
+#         probabilities_graph, probabilities_distance, EPS=1e-4, repulsion_strength=1.0
+# ):
+#     attraction_term = - probabilities_graph * tf.math.log(tf.clip_by_value(probabilities_distance, clip_value_min=EPS, clip_value_max=1.0))
+#     repellent_term = (
+#             -(1.0 - probabilities_graph)
+#             * tf.math.log(tf.clip_by_value(1.0 - probabilities_distance, clip_value_min=EPS, clip_value_max=1.0))
+#             * repulsion_strength
+#     )
 
-    # balance the expected losses between attraction and repel
-    CE = attraction_term + repellent_term
-    return attraction_term, repellent_term, CE
+#     # balance the expected losses between attraction and repel
+#     CE = attraction_term + repellent_term
+#     return attraction_term, repellent_term, CE
 
 
 def find_neighbor_preserving_rate(prev_data, train_data, n_neighbors):

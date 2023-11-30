@@ -4,7 +4,17 @@ import torch
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
-from sklearn.cluster import KMeans
+from sklearn.metrics.pairwise import euclidean_distances
+import numpy as np
+
+from sklearn.datasets import make_blobs
+from sklearn.cluster import KMeans,SpectralClustering,AgglomerativeClustering
+from sklearn.metrics import pairwise_distances
+
+
+
+from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score
 
 class SkeletonGenerator:
     """SkeletonGenerator except allows for generate skeleton"""
@@ -271,14 +281,13 @@ class SkeletonGenerator:
 
 class CenterSkeletonGenerator:
     """SkeletonGenerator except allows for generate skeleton"""
-    def __init__(self, data_provider, epoch,distance_condition_val,variance_condition_val,min_cluster=100):
+    def __init__(self, data_provider, epoch,threshold=0.5,min_cluster=500):
         """
 
         """
         self.data_provider = data_provider
         self.epoch = epoch
-        self.distance_condition_val = distance_condition_val
-        self.variance_condition_val = variance_condition_val
+        self.threshold = threshold
         self.min_cluster = min_cluster
     
     def gen_center(self,data,k=2):
@@ -292,7 +301,7 @@ class CenterSkeletonGenerator:
         for i in range(k):
             cluster_data = data[labels == i]
             if len(cluster_data) > 0:
-                # 计算每个点到中心的距离，然后取最大值
+                # calculate each sample distance to center
                 distances = np.sqrt(((cluster_data - centers[i]) ** 2).sum(axis=1))
                 radii.append(np.max(distances))
             else:
@@ -303,15 +312,66 @@ class CenterSkeletonGenerator:
     def if_need_split(self, data):
         if len(data) < self.min_cluster:
             return False
-        kmeans = KMeans(n_clusters=1)  
+
+        kmeans = KMeans(n_clusters=2) 
         kmeans.fit(data)
-        centers = kmeans.cluster_centers_
-        center = centers[0]
-        train_data_distances = np.sqrt(((data - center)**2).sum(axis=1))
-        pred = self.data_provider.get_pred(self.epoch,np.concatenate((data,centers),axis=0))
-        distance_condition = np.any(train_data_distances > self.distance_condition_val)
-        variance_condition = np.any(np.var(pred, axis=0) > self.variance_condition_val)
-        return distance_condition or variance_condition
+        labels = kmeans.labels_
+
+        dunn_index = self.dunns_index(data, labels)
+        print(dunn_index)
+        return dunn_index < self.threshold
+    
+    def dunns_index(self, X, labels):
+        distance_matrix = euclidean_distances(X)
+
+        inter_cluster_distances = []
+        intra_cluster_distances = []
+
+        unique_labels = np.unique(labels)
+
+        # Check if we have at least two clusters
+        if len(unique_labels) < 2:
+            return float('inf')  # Ineligible for splitting
+
+        # Compute maximal intra-cluster distance
+        for label in unique_labels:
+            members = np.where(labels == label)[0]
+            if len(members) <= 1:  # Skip clusters with only one member
+                continue
+            pairwise_distances = distance_matrix[np.ix_(members, members)]
+            intra_cluster_distances.append(np.max(pairwise_distances))
+
+        if not intra_cluster_distances:  # No eligible clusters found
+            return float('inf')
+
+        max_intra_cluster_distance = max(intra_cluster_distances)
+
+        # Compute minimal inter-cluster distance
+        for i in range(len(unique_labels)):
+            for j in range(i+1, len(unique_labels)):
+                members_i = np.where(labels == unique_labels[i])[0]
+                members_j = np.where(labels == unique_labels[j])[0]
+                pairwise_distances = distance_matrix[np.ix_(members_i, members_j)]
+                inter_cluster_distances.append(np.min(pairwise_distances))
+
+        if not inter_cluster_distances:  # No eligible clusters found
+            return float('inf')
+
+        return min(inter_cluster_distances) / max_intra_cluster_distance
+
+    
+    # def if_need_split(self, data):
+    #     if len(data) < self.min_cluster:
+    #         return False
+    #     kmeans = KMeans(n_clusters=1)  
+    #     kmeans.fit(data)
+    #     centers = kmeans.cluster_centers_
+    #     center = centers[0]
+    #     train_data_distances = np.sqrt(((data - center)**2).sum(axis=1))
+    #     pred = self.data_provider.get_pred(self.epoch,np.concatenate((data,centers),axis=0))
+    #     distance_condition = np.any(train_data_distances > self.distance_condition_val)
+    #     variance_condition = np.any(np.var(pred, axis=0) > self.variance_condition_val)
+    #     return distance_condition or variance_condition
     
     def recursive_clustering(self, data,k=2):
         centers, labels, radii = self.gen_center(data, k=k)
@@ -333,9 +393,16 @@ class CenterSkeletonGenerator:
     def center_skeleton_genertaion(self):
         # Initial centers
         data = self.data_provider.train_representation(self.epoch)
-        centers_c, _, radii_c = self.gen_center(self.data_provider.train_representation(self.epoch),k=1)
-        centers_n, labels,radii_n = self.gen_center(self.data_provider.train_representation(self.epoch),k=10)
-        print("finished init")
+        data = data.reshape(data.shape[0], data.shape[1])
+
+        # pca = PCA(n_components=2)
+        # data = pca.fit_transform(data)
+
+        # pca = PCA(n_components=2)
+        # data = pca.fit_transform(data)
+        centers_c, _, radii_c = self.gen_center(data,k=1)
+        centers_n, labels,radii_n = self.gen_center(data,k=10)
+        print("finished init, start generate proxy")
 
         # Recursive clustering
         # Recursive clustering with initial split into 10 clusters
@@ -351,4 +418,90 @@ class CenterSkeletonGenerator:
             
         all_centers = np.array(all_centers)
         all_radii = np.array(all_radii)
-        return np.concatenate((centers_c,centers_n,all_centers),axis=0),np.concatenate((radii_c, radii_n, all_radii), axis=0)
+
+        centers = np.concatenate((centers_c,centers_n,all_centers))
+        # centers = pca.inverse_transform(centers)
+
+                                          
+        return centers,np.concatenate((radii_c, radii_n, all_radii), axis=0)
+    
+
+
+
+class SpectralClustringProxyGenerator:
+    """Use Spectral clustering generate proxies"""
+    def __init__(self, data_provider, epoch,threshold=0.5,min_cluster=500):
+        """
+
+        """
+        self.data_provider = data_provider
+        self.epoch = epoch
+        self.threshold = threshold
+        self.min_cluster = min_cluster
+        self.data = data_provider.train_representation(epoch = self.epoch)
+
+        def pca_(self):
+            pca = PCA(n_components=50)
+            reduced_data = pca.fit_transform(self.data)
+
+
+class HierarchicalClusteringProxyGenerator:
+
+    """ Use Hierachical Clusering generate proxies"""
+    def __init__(self, data_provider, epoch, threshold=0.5):
+        self.data_provider = data_provider
+        self.threshold = threshold
+        self.epoch = epoch
+
+    def hierarchical_clustering_analysis(self, data):
+        # 执行层次聚类
+        clustering = AgglomerativeClustering(n_clusters=10)
+        clustering.fit(data)
+
+        # 初始化每个数据点所属的簇
+        n_samples = len(data)
+        cluster_membership = {i: [i] for i in range(n_samples)}
+        merges = []
+        centers = []
+        radiuss = []
+        for merge_step, (cluster_1_idx, cluster_2_idx) in enumerate(clustering.children_):
+            # 这些索引代表合并的簇
+            new_cluster = cluster_membership[cluster_1_idx] + cluster_membership[cluster_2_idx]
+
+            # 更新簇的成员
+            cluster_membership[n_samples + merge_step] = new_cluster
+
+            # 计算新簇的中心和半径
+            new_cluster_data = data[new_cluster]
+            center = np.mean(new_cluster_data, axis=0)
+            radius = np.max(np.linalg.norm(new_cluster_data - center, axis=1))
+            centers.append(center)
+            radiuss.append(radius)
+
+            # 记录合并的信息
+            merges.append({
+                'merge_step': merge_step,
+                'merged_clusters': (cluster_1_idx, cluster_2_idx),
+                'new_cluster_center': center,
+                'new_cluster_radius': radius,
+                'new_cluster_members': new_cluster
+            })
+
+        return centers,radiuss,merges
+    
+    def proxy_generation(self):
+
+        data = self.data_provider.train_representation(self.epoch)
+        data = data.reshape(data.shape[0], data.shape[1])
+        sampled_data = data[np.random.choice(data.shape[0], size=1000, replace=False)]
+        centers,radius,merges = self.hierarchical_clustering_analysis(sampled_data)
+        return np.array(centers),radius,merges
+
+
+        
+        
+
+   
+    
+
+

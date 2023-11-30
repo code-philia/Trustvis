@@ -131,6 +131,7 @@ class visualizer(VisualizerAbstractClass):
     def get_epoch_plot_measures(self, epoch):
         """get plot measure for visualization"""
         data = self.data_provider.train_representation(epoch)
+        data = data.reshape(data.shape[0], data.shape[1])
         
         embedded = self.projector.batch_project(epoch, data)
 
@@ -206,6 +207,7 @@ class visualizer(VisualizerAbstractClass):
     
     
     def savefig(self, epoch, path="vis"):
+        
         '''
         Shows the current plot.
         '''
@@ -233,6 +235,7 @@ class visualizer(VisualizerAbstractClass):
         # self.desc.set_text(desc)
 
         train_data = self.data_provider.train_representation(epoch)
+        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
         train_labels = self.data_provider.train_labels(epoch)
         pred = self.data_provider.get_pred(epoch, train_data)
         pred = pred.argmax(axis=1)
@@ -433,8 +436,11 @@ class visualizer(VisualizerAbstractClass):
         cls_plot = ax.imshow(np.zeros([5, 5, 3]),
             interpolation='gaussian', zorder=0, vmin=0, vmax=1)
         # self.disable_synth = False
+        fname = "Epoch" if self.data_provider.mode == "normal" else "Iteration"
 
         x_min, y_min, x_max, y_max = self.get_epoch_plot_measures(epoch)
+        scale_path =  os.path.join(self.data_provider.model_path, "{}_{}".format(fname, epoch), "scale.npy")
+        np.save(scale_path,[x_min, y_min, x_max, y_max])
         _, decision_view = self.get_epoch_decision_view(epoch, resolution)
 
         cls_plot.set_data(decision_view)
@@ -443,7 +449,7 @@ class visualizer(VisualizerAbstractClass):
         ax.set_ylim((y_min, y_max))
 
         # save first and them load
-        fname = "Epoch" if self.data_provider.mode == "normal" else "Iteration"
+        
         save_path = os.path.join(self.data_provider.model_path, "{}_{}".format(fname, epoch), "bgimg.png")
         plt.savefig(save_path, format='png',bbox_inches='tight',pad_inches=0.0)
         with open(save_path, 'rb') as img_f:

@@ -130,6 +130,15 @@ def evaluate_inv_accu(labels, pred):
     """
     return np.sum(labels == pred) / len(labels)
 
+def evaluate_vis_error(labels, pred):
+    """
+    prediction accuracy of reconstruction data
+    :param labels: ndarray, shape(N,), label for each point
+    :param pred: ndarray, shape(N,), prediction for each point
+    :return accu: float, the reconstruction accuracy
+    """
+    return np.sum(labels != pred)
+
 
 def evaluate_inv_conf(labels, ori_pred, new_pred):
     """
