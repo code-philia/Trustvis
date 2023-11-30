@@ -18,7 +18,7 @@ from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
 from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss
 from singleVis.edge_dataset import DVIDataHandler
-from singleVis.trainer import DVIALMODITrainer,PROXYALMODITrainer
+from singleVis.trainer import PROXYALMODITrainer
 from singleVis.data import NormalDataProvider
 from singleVis.spatial_skeleton_edge_constructor import OriginSingleEpochSpatialEdgeConstructor
 from singleVis.projector import DVIProjector
@@ -171,8 +171,6 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     model.load_state_dict(save_model["state_dict"])
 
     trainer = PROXYALMODITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE,iteration=iteration, data_provider=data_provider, prev_model=prev_model, S_N_EPOCHS=S_N_EPOCHS, B_N_EPOCHS=B_N_EPOCHS, N_NEIGHBORS=N_NEIGHBORS,threshold=5,resolution=800)
-
-    # trainer = DVIALMODITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE, grid_high_mask=grid_high_mask, high_bom=high_bom, high_rad=high_rad, iteration=iteration, data_provider=data_provider, prev_model=prev_model, S_N_EPOCHS=S_N_EPOCHS, B_N_EPOCHS=B_N_EPOCHS, N_NEIGHBORS=N_NEIGHBORS)
 
     t2=time.time()
     trainer.train(PATIENT, MAX_EPOCH)
