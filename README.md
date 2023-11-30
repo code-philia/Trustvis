@@ -1,5 +1,20 @@
-# Training Dynamic
-demo data store in /training_dynamic
+# Environment Configuration
+1. create conda environment
+```
+$ cd Vis
+$ conda create -n trustvis python=3.7
+$ (trustvis) conda activate visualizer
+```
+
+2. install pyTorch and CUDA
+For setting up PyTorch on that conda environment, use the guidelines provided at [PyTorch's official local installation page](https://pytorch.org/get-started/locally/). This guide will help you select the appropriate configuration based on your operating system, package manager, Python version, and CUDA version.
+
+3. install requirements
+```
+$ (trustvis) pip install -r requirements.txt
+```
+
+
 # evaluate subject model
 
 ```
@@ -11,19 +26,30 @@ The trainig dynamic performance will be store in /training_dynamic/Model/subject
 
 # Run trustvis 
 ```
+$ cd trustvis
+```
+## train baseline visualization model
+```
+$ conda activate trustvis
+$(trustvis) python base.py --epoch epoch_num --content_path training_dynamic folder's path
+```
 
-conda activate deepdebugger
-# proxy only
-python proxy.py --epoch 1/2/3 (default 3)
-
-the vis result will be store in /training_dynamic/Proxy/***.png
+## train proxy only visualization model(for ablation study)
+```
+$(trustvis) proxy.py --epoch epoch_num --content_path training_dynamic folder's path
+```
+- the vis result will be store in /training_dynamic/Proxy/***.png
 the evaluation resulte wiil be store in /training_dynamic/Model/proxy_eval.json
 
-# trustvis with AL
-python active_learning.py  --epoch 1/2/3 (default 3)
-
-the vis result will be store in /training_dynamic/Trust_al/***.png
-
-the evaluation resulte wiil be store in /training_dynamic/Model/trustvis_al_eval.json
-
+# train active learning only visualization model(for ablation study)
+❕proxy only visualization model should be trained and saved
 ```
+$(trustvis) al_base.py --epoch epoch_num --content_path training_dynamic folder's path
+```
+# train trustvis(proxy based + active learning)
+❕proxy only visualization model should be trained and saved
+```
+$(trustvis) al_proxy.py --epoch epoch_num --content_path training_dynamic folder's path
+```
+the vis result will be store in /training_dynamic/Trust_al/***.png
+the evaluation resulte wiil be store in /training_dynamic/Model/trustvis_al_eval.json
