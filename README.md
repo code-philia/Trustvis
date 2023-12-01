@@ -33,25 +33,31 @@ $ cd trustvis
 $ conda activate trustvis
 $(trustvis) python base.py --epoch epoch_num --content_path training_dynamic folder's path
 ```
+- the vis model will be store in /training_dynamic/Model/Epoch_{epoch_number}/base.pth
+- the vis result will be store in /training_dynamic/Base/***.png
+- the evaluation resulte wiil be store in /training_dynamic/Model/base_eval.json
 
 ### train proxy only visualization model(for ablation study)
 ```
 $(trustvis) proxy.py --epoch epoch_num --content_path training_dynamic folder's path
 ```
+- the vis model will be store in /training_dynamic/Model/Epoch_{epoch_number}/proxy.pth
 - the vis result will be store in /training_dynamic/Proxy/***.png
-
-the evaluation resulte wiil be store in /training_dynamic/Model/proxy_eval.json
+- the evaluation resulte wiil be store in /training_dynamic/Model/proxy_eval.json
 
 ### train active learning only visualization model(for ablation study)
 ⚠️ proxy only visualization model should be trained and saved
 ```
 $(trustvis) al_base.py --epoch epoch_num --content_path training_dynamic folder's path
 ```
+- the vis model will be store in /training_dynamic/Model/Epoch_{epoch_number}/al_base.pth
+- the vis result will be store in /training_dynamic/al_base/***.png
+- the evaluation resulte wiil be store in /training_dynamic/Model/al_base_eval.json
 ### train trustvis(proxy based + active learning)
 ⚠️ proxy only visualization model should be trained and saved
 ```
 $(trustvis) al_proxy.py --epoch epoch_num --content_path training_dynamic folder's path
 ```
+- the vis model will be store in /training_dynamic/Model/Epoch_{epoch_number}/trustvis.pth
 - the vis result will be store in /training_dynamic/Trust_al/***.png
-
-the evaluation resulte wiil be store in /training_dynamic/Model/trustvis_al_eval.json
+- the evaluation resulte wiil be store in /training_dynamic/Model/trustvis_al_eval.json
