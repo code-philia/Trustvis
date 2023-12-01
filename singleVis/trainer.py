@@ -1083,7 +1083,7 @@ class PROXYALMODITrainer(SingleVisTrainer):
             param.requires_grad = False
         w_prev = dict(self.prev_model.named_parameters())
     
-    def evaluate_and_find_errors(self, data, recon_data, error_threshold=0.1):
+    def evaluate_and_find_errors(self, data, recon_data, error_threshold=0.05):
        
         high_error_indices = []
         reconstruction_errors = []
