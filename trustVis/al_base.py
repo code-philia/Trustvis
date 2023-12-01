@@ -77,7 +77,7 @@ LEN = TRAINING_PARAMETER["train_num"]
 # Training parameter (visualization model)
 VISUALIZATION_PARAMETER = config["VISUALIZATION"]
 LAMBDA1 = VISUALIZATION_PARAMETER["LAMBDA1"]
-LAMBDA1 = 5
+LAMBDA1 = 10
 LAMBDA2 = VISUALIZATION_PARAMETER["LAMBDA2"]
 # B_N_EPOCHS = VISUALIZATION_PARAMETER["BOUNDARY"]["B_N_EPOCHS"]
 B_N_EPOCHS = 0
@@ -170,7 +170,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     save_model = torch.load(file_path, map_location="cpu")
     model.load_state_dict(save_model["state_dict"])
 
-    trainer = PROXYALMODITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE,iteration=iteration, data_provider=data_provider, prev_model=prev_model, S_N_EPOCHS=S_N_EPOCHS, B_N_EPOCHS=B_N_EPOCHS, N_NEIGHBORS=N_NEIGHBORS,threshold=5,resolution=800)
+    trainer = PROXYALMODITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE,iteration=iteration, data_provider=data_provider, prev_model=prev_model, S_N_EPOCHS=S_N_EPOCHS, B_N_EPOCHS=B_N_EPOCHS, N_NEIGHBORS=N_NEIGHBORS,threshold=5,resolution=500)
 
     t2=time.time()
     trainer.train(PATIENT, MAX_EPOCH)

@@ -119,7 +119,7 @@ class Evaluator(EvaluatorAbstractClass):
         val = evaluate_inv_accu(pred, new_pred)
         val_error = evaluate_vis_error(pred, new_pred)
         if self.verbose:
-            print("#train# PPR: {:.2f} in epoch {:d}, error:{:d}".format(val, epoch, val_error))
+            print("#train# PPR: {:.2f} in epoch {:d}, vis error:{:d}".format(val, epoch, val_error))
         return val,val_error
 
     def eval_inv_test(self, epoch):
@@ -134,7 +134,7 @@ class Evaluator(EvaluatorAbstractClass):
         val = evaluate_inv_accu(pred, new_pred)
         val_error = evaluate_vis_error(pred, new_pred)
         if self.verbose:
-            print("#test# PPR: {:.2f} in epoch {:d},error:{:d}".format(val, epoch, val_error))
+            print("#test# PPR: {:.2f} in epoch {:d}, vis error:{:d}".format(val, epoch, val_error))
         return val,val_error
     
     def eval_inv_dist_train(self, epoch):

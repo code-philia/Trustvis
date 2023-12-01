@@ -14,10 +14,12 @@ from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.spatial_skeleton_edge_constructor import ActiveLearningEpochSpatialEdgeConstructor
 from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor
 from singleVis.edge_dataset import DVIDataHandler
+from singleVis.eval.evaluator import Evaluator
 import sys
 sys.path.append('..')
 from trustVis.grid_generation import GridGenerator
 from singleVis.projector import PROCESSProjector
+import torch.nn as nn
 
 torch.manual_seed(0)  # 使用固定的种子
 torch.cuda.manual_seed_all(0)
@@ -928,19 +930,26 @@ class PROXYALMODITrainer(SingleVisTrainer):
         grid_generator = GridGenerator(self.data_provider,self.iteration,projector, self.threshold, self.resolution)
         self.grid_high_mask = grid_generator.gen_grids_near_to_training_data()
         print("all near training data grids shape:", self.grid_high_mask.shape)
+        evaluator = Evaluator(self.data_provider, projector)
+        evaluator.eval_inv_train(self.iteration)
+        evaluator.eval_inv_test(self.iteration)
         self.model.eval()
 
         grid_pred = self.data_provider.get_pred(self.iteration, self.grid_high_mask).argmax(axis=1)
         self.grid_high_mask = torch.tensor(self.grid_high_mask).to(device=self.DEVICE, dtype=torch.float32)
         grid_second_high_mask = self.model(self.grid_high_mask,self.grid_high_mask)['recon'][0]
         grid_second_high_mask = grid_second_high_mask.cpu().detach().numpy()
+
+        
+        ### base on pred res find error
         grid_second_pred = self.data_provider.get_pred(self.iteration, grid_second_high_mask).argmax(axis=1)
 
         error_indices = [i for i in range(len(grid_pred)) if grid_pred[i] != grid_second_pred[i]]
         error_grids = self.grid_high_mask.cpu().detach().numpy()[error_indices]
-        print("current error grids shape:", error_grids.shape)
+        _, high_err_indices = self.evaluate_and_find_errors(error_grids,grid_second_high_mask[error_indices])
+        print("current pred error grids:", len(error_indices), "high_err_indices", len(high_err_indices))
         
-        al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,error_grids)
+        al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,error_grids[high_err_indices])
 
         # al_spatial_cons = ActiveLearningEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, cluster_points, uncluster_points, self.high_bom)
         al_edge_to, al_edge_from, al_probs, al_feature_vectors, al_attention = al_spatial_cons.construct()
@@ -1073,6 +1082,23 @@ class PROXYALMODITrainer(SingleVisTrainer):
         for param in self.prev_model.parameters():
             param.requires_grad = False
         w_prev = dict(self.prev_model.named_parameters())
+    
+    def evaluate_and_find_errors(self, data, recon_data, error_threshold=0.1):
+       
+        high_error_indices = []
+        reconstruction_errors = []
+
+        for i, (x, x_prime) in enumerate(zip(data, recon_data)):
+            # 计算重构误差，这里使用 NumPy 来计算均方误差
+            reconstruction_error = np.mean((x - x_prime) ** 2)
+            reconstruction_errors.append(reconstruction_error)
+
+            # 如果误差超过阈值，则标记为高误差点
+            if reconstruction_error > error_threshold:
+                high_error_indices.append(i)
+
+        return reconstruction_errors, high_error_indices
+
         
     
     def record_time(self, save_dir, file_name, operation, iteration, t):
