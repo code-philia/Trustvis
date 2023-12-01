@@ -21,8 +21,8 @@ $ (trustvis) pip install -r requirements.txt
 ## evaluate subject model
 
 ```
-conda activate myvenv
-python subject_model_eval.py
+$ conda activate trustvis
+$(trustvis) python subject_model_eval.py
 ```
 The trainig dynamic performance will be store in /training_dynamic/Model/subject_model_eval.json
 
