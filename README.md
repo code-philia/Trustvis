@@ -1,4 +1,6 @@
-# Environment Configuration
+# What is Trustvis?
+# How To Use it?
+## Environment Configuration
 1. create conda environment
 ```
 $ cd Vis
@@ -15,7 +17,7 @@ $ (trustvis) pip install -r requirements.txt
 ```
 
 
-# evaluate subject model
+## evaluate subject model
 
 ```
 conda activate myvenv
@@ -24,7 +26,7 @@ python subject_model_eval.py
 The trainig dynamic performance will be store in /training_dynamic/Model/subject_model_eval.json
 
 
-# Run trustvis 
+## Run trustvis 
 ```
 $ cd trustvis
 ```
