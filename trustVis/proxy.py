@@ -92,6 +92,7 @@ LEN = TRAINING_PARAMETER["train_num"]
 # Training parameter (visualization model)
 VISUALIZATION_PARAMETER = config["VISUALIZATION"]
 LAMBDA1 = VISUALIZATION_PARAMETER["LAMBDA1"]
+LAMBDA1 = 2
 LAMBDA2 = VISUALIZATION_PARAMETER["LAMBDA2"]
 B_N_EPOCHS = VISUALIZATION_PARAMETER["BOUNDARY"]["B_N_EPOCHS"]
 L_BOUND = VISUALIZATION_PARAMETER["BOUNDARY"]["L_BOUND"]
@@ -217,7 +218,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
 
     t2=time.time()
-    trainer.train(PATIENT, MAX_EPOCH)
+    trainer.train(PATIENT, MAX_EPOCH, data_provider, iteration)
     t3 = time.time()
     print('training:', t3-t2)
     # save result

@@ -453,7 +453,13 @@ class DVITrainer(SingleVisTrainer):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
     
     
-    def train_step(self):
+    def train_step(self,data_provider,iteration):
+        
+        projector = PROCESSProjector(self.model, data_provider.content_path, '', self.DEVICE)
+        evaluator = Evaluator(data_provider, projector)
+        evaluator.eval_inv_train(iteration)
+        evaluator.eval_inv_test(iteration)
+
         self.model = self.model.to(device=self.DEVICE)
         self.model.train()
         all_loss = []
@@ -512,7 +518,26 @@ class DVITrainer(SingleVisTrainer):
     #     normalized_mean_radii = torch.mean(normalized_radii)
 
     #     return alpha * normalized_mean_radii
-    
+    def train(self, PATIENT, MAX_EPOCH_NUMS, data_provider, iteration):
+        patient = PATIENT
+        time_start = time.time()
+        for epoch in range(MAX_EPOCH_NUMS):
+            print("====================\nepoch:{}\n===================".format(epoch+1))
+            prev_loss = self.loss
+            loss = self.train_step(data_provider, iteration)
+            self.lr_scheduler.step()
+            # early stop, check whether converge or not
+            if prev_loss - loss < 5E-3:
+                if patient == 0:
+                    break
+                else:
+                    patient -= 1
+            else:
+                patient = PATIENT
+
+        time_end = time.time()
+        time_spend = time_end - time_start
+        print("Time spend: {:.2f} for training vis model...".format(time_spend))
     def radius_loss(self, embeddings, center, alpha=1.0):
         """
         Modified radius loss function that tries to maximize the average distance.
@@ -586,6 +611,7 @@ class DVITrainer(SingleVisTrainer):
         evaluation[operation][iteration] = round(t, 3)
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
+
 class DVIActiveLearningTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
@@ -935,21 +961,25 @@ class PROXYALMODITrainer(SingleVisTrainer):
         evaluator.eval_inv_test(self.iteration)
         self.model.eval()
 
-        grid_pred = self.data_provider.get_pred(self.iteration, self.grid_high_mask).argmax(axis=1)
+        grid_pred_ = self.data_provider.get_pred(self.iteration, self.grid_high_mask)
+
+        grid_pred = grid_pred_.argmax(axis=1)
         self.grid_high_mask = torch.tensor(self.grid_high_mask).to(device=self.DEVICE, dtype=torch.float32)
         grid_second_high_mask = self.model(self.grid_high_mask,self.grid_high_mask)['recon'][0]
         grid_second_high_mask = grid_second_high_mask.cpu().detach().numpy()
 
         
         ### base on pred res find error
-        grid_second_pred = self.data_provider.get_pred(self.iteration, grid_second_high_mask).argmax(axis=1)
+        grid_second_pred_ = self.data_provider.get_pred(self.iteration, grid_second_high_mask)
+        grid_second_pred = grid_second_pred_.argmax(axis=1)
 
         error_indices = [i for i in range(len(grid_pred)) if grid_pred[i] != grid_second_pred[i]]
         error_grids = self.grid_high_mask.cpu().detach().numpy()[error_indices]
-        _, high_err_indices = self.evaluate_and_find_errors(error_grids,grid_second_high_mask[error_indices])
+        _, high_err_indices = self.evaluate_and_find_errors(grid_second_pred_,grid_pred_)
+        high_error_grids = self.grid_high_mask.cpu().detach().numpy()[high_err_indices]
         print("current pred error grids:", len(error_indices), "high_err_indices", len(high_err_indices))
         
-        al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,error_grids[high_err_indices])
+        al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,error_grids)
 
         # al_spatial_cons = ActiveLearningEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, cluster_points, uncluster_points, self.high_bom)
         al_edge_to, al_edge_from, al_probs, al_feature_vectors, al_attention = al_spatial_cons.construct()
@@ -1083,7 +1113,7 @@ class PROXYALMODITrainer(SingleVisTrainer):
             param.requires_grad = False
         w_prev = dict(self.prev_model.named_parameters())
     
-    def evaluate_and_find_errors(self, data, recon_data, error_threshold=0.05):
+    def evaluate_and_find_errors(self, data, recon_data, error_threshold=0.1):
        
         high_error_indices = []
         reconstruction_errors = []

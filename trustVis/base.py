@@ -204,7 +204,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
 
     t2=time.time()
-    trainer.train(PATIENT, MAX_EPOCH)
+    trainer.train(PATIENT, MAX_EPOCH,data_provider,iteration)
     t3 = time.time()
     print('training:', t3-t2)
     # save result
