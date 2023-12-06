@@ -162,20 +162,48 @@ def get_border_points(model, input_x, confs, predictions, device, num_adv_eg, l_
     return adv_examples, curr_samples, tot_num
 
 
-def batch_run(model, data, batch_size=200):
+# def batch_run(model, data, batch_size=200):
+#     """batch run, in case memory error"""
+#     data = data.to(dtype=torch.float)
+#     output = None
+#     n_batches = max(math.ceil(len(data) / batch_size), 1)
+#     for b in tqdm.tqdm(range(n_batches)):
+#         r1, r2 = b * batch_size, (b + 1) * batch_size
+#         inputs = data[r1:r2]
+#         with torch.no_grad():
+#             pred = model(inputs).cpu().numpy()
+#             if output is None:
+#                 output = pred
+#             else:
+#                 output = np.concatenate((output, pred), axis=0)
+#     return output
+
+def batch_run(model, data, verbose=1, batch_size=200):
     """batch run, in case memory error"""
     data = data.to(dtype=torch.float)
     output = None
     n_batches = max(math.ceil(len(data) / batch_size), 1)
-    for b in tqdm.tqdm(range(n_batches)):
-        r1, r2 = b * batch_size, (b + 1) * batch_size
-        inputs = data[r1:r2]
-        with torch.no_grad():
-            pred = model(inputs).cpu().numpy()
-            if output is None:
-                output = pred
-            else:
-                output = np.concatenate((output, pred), axis=0)
+    if verbose:
+        for b in tqdm.tqdm(range(n_batches)):
+            r1, r2 = b * batch_size, (b + 1) * batch_size
+            inputs = data[r1:r2]
+            with torch.no_grad():
+                pred = model(inputs).cpu().numpy()
+                if output is None:
+                    output = pred
+                else:
+                    output = np.concatenate((output, pred), axis=0)
+    else:
+        for b in range(n_batches):
+            r1, r2 = b * batch_size, (b + 1) * batch_size
+            inputs = data[r1:r2]
+            with torch.no_grad():
+                pred = model(inputs).cpu().numpy()
+                if output is None:
+                    output = pred
+                else:
+                    output = np.concatenate((output, pred), axis=0)
+
     return output
 
 def load_labelled_data_index(filename):

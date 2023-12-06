@@ -140,86 +140,84 @@ single_loss_fn = SingleVisLoss(umap_loss_fn, recon_loss_fn, lambd=LAMBDA1)
 # Define Projector
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
-train_labels = data_provider.train_labels(191)
-print("train_labels",train_labels)
 
 
-# start_flag = 1
+start_flag = 1
 
-# prev_model = VisModel(ENCODER_DIMS, DECODER_DIMS)
+prev_model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
-# for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
-#     # Define DVI Loss
-#     if start_flag:
-#         temporal_loss_fn = DummyTemporalLoss(DEVICE)
-#         criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
-#         start_flag = 0
-#     else:
-#         # TODO AL mode, redefine train_representation
-#         prev_data = data_provider.train_representation(iteration-EPOCH_PERIOD)
-#         prev_data = prev_data.reshape(prev_data.shape[0],prev_data.shape[1])
-#         curr_data = data_provider.train_representation(iteration)
-#         curr_data = curr_data.reshape(curr_data.shape[0],curr_data.shape[1])
-#         t_1= time.time()
-#         npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
-#         t_2= time.time()
+for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
+    # Define DVI Loss
+    if start_flag:
+        temporal_loss_fn = DummyTemporalLoss(DEVICE)
+        criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
+        start_flag = 0
+    else:
+        # TODO AL mode, redefine train_representation
+        prev_data = data_provider.train_representation(iteration-EPOCH_PERIOD)
+        prev_data = prev_data.reshape(prev_data.shape[0],prev_data.shape[1])
+        curr_data = data_provider.train_representation(iteration)
+        curr_data = curr_data.reshape(curr_data.shape[0],curr_data.shape[1])
+        t_1= time.time()
+        npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
+        t_2= time.time()
      
-#         temporal_loss_fn = TemporalLoss(w_prev, DEVICE)
-#         criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=LAMBDA2*npr,device=DEVICE)
-#     # Define training parameters
-#     optimizer = torch.optim.Adam(model.parameters(), lr=.01, weight_decay=1e-5)
-#     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
-#     # Define Edge dataset
+        temporal_loss_fn = TemporalLoss(w_prev, DEVICE)
+        criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=LAMBDA2*npr,device=DEVICE)
+    # Define training parameters
+    optimizer = torch.optim.Adam(model.parameters(), lr=.01, weight_decay=1e-5)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
+    # Define Edge dataset
     
     
 
-#     t0 = time.time()
-#     ##### construct the spitial complex
-#     spatial_cons = SingleEpochSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
-#     edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
-#     t1 = time.time()
+    t0 = time.time()
+    ##### construct the spitial complex
+    spatial_cons = SingleEpochSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
+    edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
+    t1 = time.time()
 
-#     print('complex-construct:', t1-t0)
+    print('complex-construct:', t1-t0)
 
-#     probs = probs / (probs.max()+1e-3)
-#     eliminate_zeros = probs> 1e-3    #1e-3
-#     edge_to = edge_to[eliminate_zeros]
-#     edge_from = edge_from[eliminate_zeros]
-#     probs = probs[eliminate_zeros]
+    probs = probs / (probs.max()+1e-3)
+    eliminate_zeros = probs> 1e-3    #1e-3
+    edge_to = edge_to[eliminate_zeros]
+    edge_from = edge_from[eliminate_zeros]
+    probs = probs[eliminate_zeros]
     
-#     dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention)
+    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention)
 
-#     n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
-#     # chose sampler based on the number of dataset
-#     if len(edge_to) > pow(2,24):
-#         sampler = CustomWeightedRandomSampler(probs, n_samples, replacement=True)
-#     else:
-#         sampler = WeightedRandomSampler(probs, n_samples, replacement=True)
-#     edge_loader = DataLoader(dataset, batch_size=2000, sampler=sampler, num_workers=8, prefetch_factor=10)
+    n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
+    # chose sampler based on the number of dataset
+    if len(edge_to) > pow(2,24):
+        sampler = CustomWeightedRandomSampler(probs, n_samples, replacement=True)
+    else:
+        sampler = WeightedRandomSampler(probs, n_samples, replacement=True)
+    edge_loader = DataLoader(dataset, batch_size=2000, sampler=sampler, num_workers=8, prefetch_factor=10)
 
-#     ########################################################################################################################
-#     #                                                       TRAIN                                                          #
-#     ########################################################################################################################
+    ########################################################################################################################
+    #                                                       TRAIN                                                          #
+    ########################################################################################################################
 
-#     trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
+    trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
 
-#     t2=time.time()
-#     trainer.train(PATIENT, MAX_EPOCH, data_provider,iteration)
-#     t3 = time.time()
-#     print('training:', t3-t2)
-#     # save result
-#     save_dir = data_provider.model_path
-#     trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "complex_construction", str(iteration), t1-t0)
-#     trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "training", str(iteration), t3-t2)
-#     save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(iteration))
-#     trainer.save(save_dir=save_dir, file_name="{}".format(VIS_MODEL_NAME))
+    t2=time.time()
+    trainer.train(PATIENT, MAX_EPOCH, data_provider,iteration)
+    t3 = time.time()
+    print('training:', t3-t2)
+    # save result
+    save_dir = data_provider.model_path
+    trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "complex_construction", str(iteration), t1-t0)
+    trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "training", str(iteration), t3-t2)
+    save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(iteration))
+    trainer.save(save_dir=save_dir, file_name="{}".format(VIS_MODEL_NAME))
 
-#     print("Finish epoch {}...".format(iteration))
+    print("Finish epoch {}...".format(iteration))
 
-#     prev_model.load_state_dict(model.state_dict())
-#     for param in prev_model.parameters():
-#         param.requires_grad = False
-#     w_prev = dict(prev_model.named_parameters())
+    prev_model.load_state_dict(model.state_dict())
+    for param in prev_model.parameters():
+        param.requires_grad = False
+    w_prev = dict(prev_model.named_parameters())
     
 
 ########################################################################################################################

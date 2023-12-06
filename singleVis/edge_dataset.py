@@ -110,5 +110,39 @@ class DVIDataHandler(Dataset):
         # return the number of all edges
         return len(self.edge_to)
 
+# class DataPredHandler(Dataset):
+#     def __init__(self, edge_to, edge_from, feature_vector, attention, transform=None, data_provider, iteration):
+#         self.edge_to = edge_to
+#         self.edge_from = edge_from
+#         self.data = feature_vector
+#         self.attention = attention
+#         self.transform = transform
+#         self.data_provider = data_provider
+#         self.iteration = iteration
+
+#     def __getitem__(self, item):
+#         edge_to_idx = self.edge_to[item]
+#         edge_from_idx = self.edge_from[item]
+#         edge_to = self.data[edge_to_idx]
+#         edge_from = self.data[edge_from_idx]
+#         a_to = self.attention[edge_to_idx]
+#         a_from = self.attention[edge_from_idx]
+
+#         edge_pred_to = self.data_provider.get_pred(self.iteration, edge_to.cpu().detach().numpy())
+#         edge_pred_from  = self.data_provider.get_pred(self.iteration, edge_to.cpu().detach().numpy())
+
+#         if self.transform is not None:
+#             # TODO correct or not?
+#             edge_to = Image.fromarray(edge_to)
+#             edge_to = self.transform(edge_to)
+#             edge_from = Image.fromarray(edge_from)
+#             edge_from = self.transform(edge_from)
+#         return edge_to, edge_from, a_to, a_from, torch.Tensor(edge_pred_to), torch.Tensor(edge_pred_from)
+
+#     def __len__(self):
+#         # return the number of all edges
+#         return len(self.edge_to)
+
+
 # tf.dataset
 

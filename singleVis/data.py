@@ -343,7 +343,7 @@ class NormalDataProvider(DataProvider):
         fea_fn = self.model.feature
         return fea_fn
 
-    def get_pred(self, epoch, data):
+    def get_pred(self, epoch, data, verbose=1):
         '''
         get the prediction score for data in epoch_id
         :param data: numpy.ndarray
@@ -354,7 +354,7 @@ class NormalDataProvider(DataProvider):
 
         data = torch.from_numpy(data)
         data = data.to(self.DEVICE)
-        pred = batch_run(prediction_func, data)
+        pred = batch_run(prediction_func, data, verbose)
         return pred
 
     def training_accu(self, epoch):

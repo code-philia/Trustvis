@@ -612,12 +612,12 @@ class DVITrainer(SingleVisTrainer):
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
 
+
+        
 class DVIActiveLearningTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
 
-
-    
     def train_step(self):
         self.model = self.model.to(device=self.DEVICE)
 
@@ -988,10 +988,6 @@ class PROXYALMODITrainer(SingleVisTrainer):
         train_data_recon_pred = self.data_provider.get_pred(self.iteration, train_data_recon).argmax(axis=1)
         self.train_error_indices = [i for i in range(len(train_data_torch_pred)) if train_data_torch_pred[i] != train_data_recon_pred[i]]
         
-
-
-
-
         
         al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data[high_train_err_indices]),axis=0))
         # al_spatial_cons = ErrorALEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,self.error_grids, self.train_error_indices)

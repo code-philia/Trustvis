@@ -137,6 +137,44 @@ class ReconstructionLoss(nn.Module):
         # loss2 = torch.mean(torch.mean(torch.pow(edge_from - recon_from, 2), 1))
         return (loss1 + loss2)/2
 
+
+class ReconstructionPredEdgeLoss(nn.Module):
+    def __init__(self, data_provider, iteration, beta=1.0,alpha=0.5):
+        super(ReconstructionPredEdgeLoss, self).__init__()
+        self._beta = beta
+        self._alpha = alpha
+        self.data_provider = data_provider
+        self.iteration = iteration
+
+    def forward(self, edge_to, edge_from, recon_to, recon_from, a_to, a_from):
+        loss1 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_to), self._beta), torch.pow(edge_to - recon_to, 2)), 1))
+        loss2 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_from), self._beta), torch.pow(edge_from - recon_from, 2)), 1))
+
+        # Concatenate tensors
+        concatenated_tensors = torch.cat([edge_to, edge_from, recon_to, recon_from], dim=0)
+        # Convert to numpy and detach if necessary
+        concatenated_numpy = concatenated_tensors.cpu().detach().numpy()
+        # prediction
+        concatenated_predictions = self.data_provider.get_pred(self.iteration, concatenated_numpy, 0)
+        # Convert back to torch.Tensor
+        concatenated_predictions_tensor = torch.Tensor(concatenated_predictions)
+
+        # Split the predictions
+        total_length = concatenated_predictions_tensor.shape[0]
+        each_length = total_length // 4
+        edge_pred_to = concatenated_predictions_tensor[:each_length]
+        edge_pred_from = concatenated_predictions_tensor[each_length:2*each_length]
+        recon_pred_to = concatenated_predictions_tensor[2*each_length:3*each_length]
+        recon_pred_from = concatenated_predictions_tensor[3*each_length:]
+
+        loss1_pred = torch.mean(torch.mean(torch.pow(edge_pred_to - recon_pred_to, 2), 1))
+        loss2_pred = torch.mean(torch.mean(torch.pow(edge_pred_from - recon_pred_from, 2), 1))
+    
+        # without attention weights
+        # loss1 = torch.mean(torch.mean(torch.pow(edge_to - recon_to, 2), 1))
+        # loss2 = torch.mean(torch.mean(torch.pow(edge_from - recon_from, 2), 1))
+        return (loss1 + loss2)/2 + (loss1_pred + loss2_pred) / 2
+
 class ReconstructionPredLoss(nn.Module):
     def __init__(self, data_provider, epoch, beta=1.0,alpha=0.5):
         super(ReconstructionPredLoss, self).__init__()
