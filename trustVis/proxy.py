@@ -76,7 +76,7 @@ CLASSES = config["CLASSES"]
 DATASET = config["DATASET"]
 PREPROCESS = config["VISUALIZATION"]["PREPROCESS"]
 GPU_ID = config["GPU"]
-GPU_ID = 1
+GPU_ID = 0
 EPOCH_START = config["EPOCH_START"]
 EPOCH_END = config["EPOCH_END"]
 EPOCH_PERIOD = config["EPOCH_PERIOD"]
@@ -179,8 +179,15 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     skeleton_generator = CenterSkeletonGenerator(data_provider,EPOCH_START,1)
     # Start timing
     start_time = time.time()
-    ## gennerate skeleton
-    high_bom,_ = skeleton_generator.center_skeleton_genertaion()
+    proxy_path = os.path.join(data_provider.content_path, 'Model', 'Epoch_{}'.format(iteration), 'proxy.npy')
+    if os.path.exists(proxy_path):
+        high_bom = np.load(proxy_path)
+    else:
+        ## gennerate skeleton
+        high_bom,_ = skeleton_generator.center_skeleton_genertaion()
+        np.save(proxy_path, high_bom)
+
+    
 
 
     end_time = time.time()

@@ -279,7 +279,7 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         _, vr_head, vr_tail, vr_weight, _ = get_graph_elements(vr_complex, self.s_n_epochs)
 
         # get data from graph
-        if self.b_n_epochs == 0:
+        if bw_complex == None:
             return vr_head, vr_tail, vr_weight
         else:
             _, bw_head, bw_tail, bw_weight, _ = get_graph_elements(bw_complex, self.b_n_epochs)
@@ -458,12 +458,12 @@ class TrustvisProxyEdgeConstructor(SpatialEdgeConstructor):
         # step 1
         # build proxy-proxy-connection
         proxy_proxy_connection,_, _, _  = self._construct_fuzzy_complex(self.proxy)
-        proxy_proxy_pred_connection, _, _, _ = self._construct_fuzzy_complex_pred_Diff(self.proxy,self.iteration)
-        p_edge_to, p_edge_from, p_weight = self.merge_complexes(complex, complex_pred,train_data) 
+        proxy_proxy_pred_connection, _, _, _ = self._construct_fuzzy_complex_pred_Diff(self.proxy, self.iteration)
+        p_edge_to, p_edge_from, p_weight = self.merge_complexes(proxy_proxy_connection, proxy_proxy_pred_connection,self.proxy) 
         # build proxy-sample-connection
         proxy_sample_connection, _, _, _ = self._construct_boundary_wise_complex(self.proxy, train_data)
-        proxy_sample_pred_complex, _, _, _ = self._construct_pred_wise_complex(self.proxy, train_data,self.iteration)
-        edge_to, edge_from, weight = self.merge_complexes(proxy_sample_connection, proxy_sample_pred_complex, np.concatenate((tself.proxy, train_data),axis=0)) 
+        proxy_sample_pred_complex, _, _, _ = self._construct_pred_wise_complex(self.proxy, train_data, self.iteration)
+        edge_to, edge_from, weight = self.merge_complexes(proxy_sample_connection, proxy_sample_pred_complex, np.concatenate((self.proxy, train_data),axis=0)) 
 
         edge_to = np.concatenate((p_edge_to, edge_to), axis=0)
         edge_from = np.concatenate((p_edge_from, edge_from), axis=0)
@@ -475,6 +475,50 @@ class TrustvisProxyEdgeConstructor(SpatialEdgeConstructor):
         # attention = np.zeros(feature_vectors.shape)
             
         return edge_to, edge_from, weight, feature_vectors, attention
+
+    def merge_complexes(self, complex1, complex2, train_data,alpha=0.7):
+        
+        edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
+        edge_to_2, edge_from_2, weight_2 = self._construct_step_edge_dataset(complex2, None)
+
+        pred_edge_to_1 = self.data_provider.get_pred(self.iteration, train_data[edge_to_1]).argmax(axis=1)
+        pred_edge_from_1 = self.data_provider.get_pred(self.iteration, train_data[edge_from_1]).argmax(axis=1)
+
+        merged_edges = {}
+
+        for i in range(len(edge_to_1)):
+            if pred_edge_to_1[i] != pred_edge_from_1[i]:
+                continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
+            edge = (edge_to_1[i], edge_from_1[i])
+            merged_edges[edge] = weight_1[i]
+        # merge the second edge and weight
+        for i in range(len(edge_to_2)):
+            edge = (edge_to_2[i], edge_from_2[i])
+            if edge in merged_edges:
+                # if we already have the edge strong connection
+                merged_edges[edge] = (1-alpha) * merged_edges[edge] + alpha * weight_2[i] 
+            else:
+                # if we do not have the edge add it to 
+                merged_edges[edge] = weight_2[i]
+
+        merged_edge_to, merged_edge_from, merged_weight = zip(*[
+            (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+        ])
+
+        return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
+
+    def record_time(self, save_dir, file_name, operation, t):
+        file_path = os.path.join(save_dir, file_name+".json")
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                ti = json.load(f)
+        else:
+            ti = dict()
+        if operation not in ti.keys():
+            ti[operation] = dict()
+        ti[operation][str(self.iteration)] = t
+        with open(file_path, "w") as f:
+            json.dump(ti, f)
 
         
 
