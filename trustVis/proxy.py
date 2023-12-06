@@ -23,6 +23,7 @@ from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
 # from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
 from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
+from singleVis.spatial_edge_constructor import TrustvisProxyEdgeConstructor
 
 from singleVis.projector import DVIProjector
 from singleVis.utils import find_neighbor_preserving_rate
@@ -189,7 +190,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
     t0 = time.time()
     ##### construct the spitial complex
-    spatial_cons = ProxyBasedSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net,high_bom)
+    # spatial_cons = ProxyBasedSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net,high_bom)
+    spatial_cons = TrustvisProxyEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS,high_bom)
     edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
     t1 = time.time()
 
