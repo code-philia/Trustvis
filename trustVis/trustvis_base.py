@@ -147,8 +147,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     # Define DVI Loss
     if start_flag:
         temporal_loss_fn = DummyTemporalLoss(DEVICE)
-        recon_loss_fn = ReconstructionPredLoss(data_provider=data_provider,epoch=iteration, beta=1.0)
-        # recon_loss_fn = ReconstructionLoss(beta=1.0)
+        # recon_loss_fn = ReconstructionPredLoss(data_provider=data_provider,epoch=iteration, beta=1.0)
+        recon_loss_fn = ReconstructionLoss(beta=1.0)
         criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
         start_flag = 0
     else:

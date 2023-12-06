@@ -83,229 +83,6 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         self.n_neighbors = n_neighbors
 
 
-    def _construct_mapper_complex(self, train_data, filter_functions, epoch, model):
-        """
-        construct a mapper complex using a list of filter functions
-        """
-        for filter_function in filter_functions:
-            # Apply filter function to the data
-            print(f"Applying filter function: {filter_function.__name__}...")
-            filter_values = filter_function(train_data, epoch, model)
-            print(f"Filter function applied, got {len(filter_values)} filter values.")
-
-            # Partition filter values into overlapping intervals
-            print("Partitioning filter values into intervals...")
-            intervals = self._partition_into_intervals(filter_values)
-            print(f"Partitioned into {len(intervals)} intervals.")
-
-            # For each interval, select data points in that interval, cluster them,
-            # and create a simplex for each cluster
-
-            # Initialize an empty graph
-            G = nx.Graph()
-            print("Constructing simplices...")
-            for interval in intervals:
-                interval_data_indices = np.where((filter_values >= interval[0]) & (filter_values < interval[1]))[0]
-
-                if len(interval_data_indices) > 0:
-                    # Use DBSCAN to cluster data in the current interval
-                    # interval_data = train_data[interval_data_indices]
-                    # db = DBSCAN(eps=0.3, min_samples=2).fit(interval_data)
-                    # cluster_labels = db.labels_
-                    interval_data = np.column_stack([train_data[interval_data_indices], filter_values[interval_data_indices]])
-                    db = DBSCAN(eps=0.3, min_samples=2).fit(interval_data)
-                    cluster_labels = db.labels_
-
-
-                    # Create a simplex for each cluster
-                    for cluster_id in np.unique(cluster_labels):
-                        if cluster_id != -1:  # Ignore noise points
-                            cluster_indices = interval_data_indices[cluster_labels == cluster_id]
-                            G.add_edges_from(combinations(cluster_indices, 2))
-
-            # Verify if the graph has nodes and edges
-            if G.number_of_nodes() == 0 or G.number_of_edges() == 0:
-                raise ValueError("Graph has no nodes or edges.")
-
-            mapper_complex = nx.adjacency_matrix(G)
-            print(f"Finished constructing simplices using {filter_function.__name__}.")
-
-        return mapper_complex
-    
-
-    
-    def _construct_boundary_wise_complex_mapper(self, train_data, border_centers, filter_function,epoch, model):
-        """
-        Construct a boundary-wise mapper complex using a filter function.
-        For each cluster of data points (derived from the filter function applied to data points in a particular interval),
-        construct a vertex in the mapper graph. Connect vertices if their corresponding data clusters intersect.
-        """
-        # Combine train and border data
-        # print(train_data.shape, border_centers.shape)
-        fitting_data = np.concatenate((train_data, border_centers), axis=0)
-        
-        # Apply the filter function
-        filter_values = filter_function(fitting_data, epoch, model)
-        
-        # Partition filter values into overlapping intervals
-        print("Partitioning filter values into intervals...")
-        intervals = self._partition_into_intervals(filter_values)
-        print(f"Partitioned into {len(intervals)} intervals.")
-
-        # For each interval, select data points in that interval, cluster them,
-        # and create a simplex for each cluster
-       
-        # Initialize an empty graph
-        G = nx.Graph()
-        print("Constructing simplices...")
-        for interval in intervals:
-            # interval_data = train_data[(filter_values >= interval[0]) & (filter_values < interval[1])]
-            interval_data_indices = np.where((filter_values >= interval[0]) & (filter_values < interval[1]))[0]
-
-            if len(interval_data_indices) > 0:
-                # Use DBSCAN to cluster data in the current interval
-                # Note: Depending on your data, you might want to use a different clustering algorithm
-                interval_data = fitting_data[interval_data_indices]
-                db = DBSCAN(eps=0.3, min_samples=2).fit(interval_data)
-                cluster_labels = db.labels_
-
-                # Create a simplex for each cluster
-                for cluster_id in np.unique(cluster_labels):
-                    if cluster_id != -1:  # Ignore noise points
-                        cluster_indices = interval_data_indices[cluster_labels == cluster_id]
-                        # Add edges to the graph for every pair of points in the cluster
-                        G.add_edges_from(combinations(cluster_indices, 2))
-        # Verify if the graph has nodes and edges
-        if G.number_of_nodes() == 0 or G.number_of_edges() == 0:
-            raise ValueError("Graph has no nodes or edges.")
-                        
-        mapper_complex = nx.adjacency_matrix(G)
-        print(f"Finished constructing simplices using {filter_function.__name__}.")
-
-        return mapper_complex
-
-    # def _clusters_intersect(self, cluster1, cluster2):
-    #     """
-    #     Check if two data clusters intersect.
-    #     Note: Here we assume that clusters are represented as sets of data points.
-    #     Depending on your actual implementation, you might need to adjust this.
-    #     """
-    #     return not set(cluster1).isdisjoint(cluster2)
-    
-    def _clusters_intersect(self, cluster1, cluster2):
-        """
-        Check if two clusters intersect, i.e., have at least one point in common.
-        """
-        cluster1 = map(tuple, cluster1)
-        cluster2 = map(tuple, cluster2)
-
-        return not set(cluster1).isdisjoint(set(cluster2))
-
-
-
-    def _partition_into_intervals(self, filter_values, n_intervals=10, overlap=0.1):
-        """
-        Partition the range of filter_values into overlapping intervals
-        """
-        filter_min, filter_max = np.min(filter_values), np.max(filter_values)
-        interval_size = (filter_max - filter_min) / n_intervals
-        overlap_size = interval_size * overlap
-    
-        intervals = []
-        for i in range(n_intervals):
-            interval_start = filter_min + i * interval_size
-            interval_end = interval_start + interval_size + overlap_size
-            intervals.append((interval_start, interval_end))
-    
-        return intervals
-    
-    # def density_filter_function(self, data, epsilon=0.5):
-    #     """
-    #     The function calculates the density of each data point based on a Gaussian kernel
-    #     """
-    #     densities = np.zeros(data.shape[0])
-    
-    #     for i, x in enumerate(data):
-    #         distances = distance.cdist([x], data, 'euclidean').squeeze()
-    #         densities[i] = np.sum(np.exp(-(distances ** 2) / epsilon))
-    
-    #     # Normalize the densities so that they sum up to 1
-    #     densities /= np.sum(densities)
-
-    #     return densities
-    #### TODO density_filter_function
-    def density_filter_function(self, data, epoch, model, epsilon=0.5):
-        """
-        The function calculates the density of each data point based on a Gaussian kernel
-        """
-        # distances = distance.cdist(data, data, 'euclidean')
-        # densities = np.sum(np.exp(-(distances ** 2) / epsilon), axis=1)
-
-        # # Normalize the densities so that they sum up to 1
-        # densities /= np.sum(densities)
-        densities = np.random.rand(data.shape[0])
-    
-        # Normalize the densities so that they sum up to 1
-        densities /= np.sum(densities)
-
-        return densities
-    
-    def hook(self, activations, module, input, output):
-        activations.append(output)
-
-    def activation_filter(self, data, epoch, model):
-        activations = []  # Define activations here as local variable
-        model_location = os.path.join(self.data_provider.content_path, "Model", "Epoch_{}".format(epoch), "subject_model.pth")
-        model.load_state_dict(torch.load(model_location, map_location=torch.device("cpu")))
-        model.to(self.data_provider.DEVICE)
-        model.eval()
-
-        # Define a hook to capture the activations
-        def hook(module, input, output):
-            activations.append(output.detach())
-
-        # Register the hook to the desired layer of the model
-       # Find the last layer of the model dynamically
-        target_layer = model.prediction
-
-        if target_layer is not None:
-            target_layer.register_forward_hook(hook)
-            with torch.no_grad():
-                # Convert the numpy.ndarray to a torch.Tensor
-                input_tensor = torch.from_numpy(data)
-                model(input_tensor)
-        else:
-            raise ValueError("Unable to find the 'prediction' layer in the model.")
-
-        # Return the collected activations as a high-dimensional representation
-        high_dimensional_representation = torch.cat(activations, dim=0)
-        return high_dimensional_representation
-    
-    def decison_boundary_distance_filter(self,data, epoch, model):
-        preds = self.data_provider.get_pred(epoch, data)
-        preds = preds + 1e-8
-
-        sort_preds = np.sort(preds, axis=1)
-        # diff = (sort_preds[:, -1] - sort_preds[:, -2]) / (sort_preds[:, -1] - sort_preds[:, 0])
-
-        # Confidence is the maximum predicted probability
-        confidence = np.max(preds, axis=1)
-
-        # Predicted label is the index of the maximum probability
-        predicted_label = np.argmax(preds, axis=1)
-
-        # Combine the predicted label and the confidence into a score
-        score = predicted_label + (1 - confidence)
-
-        return score
-    
-    def umap_filter(self, data,epoch, model, n_components=2, n_neighbors=15, min_dist=0.1, metric='euclidean'):
-        umap_model = UMAP(n_components=n_components, n_neighbors=n_neighbors, 
-                      min_dist=min_dist, metric=metric)
-        transformed_data = umap_model.fit_transform(data)
-        return transformed_data
-
-    ################################## mapper end ######################################################
     def get_pred_diff( self, data, neibour_data, knn_indices, epoch):
         pred  = self.data_provider.get_pred(epoch, data)
         pred_n  = self.data_provider.get_pred(epoch, neibour_data)
@@ -349,13 +126,6 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
 
         # Compute the neighbor graph
         knn_indices, knn_dists = nnd.neighbor_graph
-
-        # pred_dists = self.get_pred_diff(train_data,train_data, knn_indices,epoch)
-
-        # knn_dists = pred_dists
-
-
-
         random_state = check_random_state(None)
         complex, sigmas, rhos = fuzzy_simplicial_set(
             X=train_data,
@@ -1217,7 +987,7 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
  
         complex, _, _, _ = self._construct_fuzzy_complex(train_data)
         complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
-        edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred)  
+        edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data)  
         feature_vectors = train_data
         pred_model = self.data_provider.prediction_function(self.iteration)
         attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
@@ -1225,13 +995,21 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
             
         return edge_to, edge_from, weight, feature_vectors, attention
 
-    def merge_complexes(self, complex1, complex2):
+    def merge_complexes(self, complex1, complex2,train_data):
         edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
         edge_to_2, edge_from_2, weight_2 = self._construct_step_edge_dataset(complex2, None)
 
+        pred_edge_to_1 = self.data_provider.get_pred(self.iteration, train_data[edge_to_1]).argmax(axis=1)
+        pred_edge_from_1 = self.data_provider.get_pred(self.iteration, train_data[edge_from_1]).argmax(axis=1)
+
+
         # create dict
         merged_edges = {}
+
         for i in range(len(edge_to_1)):
+            if pred_edge_to_1[i] != pred_edge_from_1[i]:
+                continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
+
             edge = (edge_to_1[i], edge_from_1[i])
             merged_edges[edge] = weight_1[i]
 
