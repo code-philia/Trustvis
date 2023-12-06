@@ -12,7 +12,7 @@ import copy
 import numpy as np
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.spatial_skeleton_edge_constructor import ActiveLearningEpochSpatialEdgeConstructor
-from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor
+from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor,ErrorALEdgeConstructor
 from singleVis.edge_dataset import DVIDataHandler
 from singleVis.eval.evaluator import Evaluator
 import sys
@@ -929,7 +929,7 @@ class OriginDVITrainer(SingleVisTrainer):
 
 
 class PROXYALMODITrainer(SingleVisTrainer):
-    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, iteration, data_provider, prev_model, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, threshold, resolution, **kwargs):
+    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, iteration, data_provider, prev_model, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, threshold, resolution, mul, **kwargs):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, **kwargs)
         self.is_first_active_learning = True  # Add this line
         # self.high_bom = high_bom
@@ -942,31 +942,34 @@ class PROXYALMODITrainer(SingleVisTrainer):
         self.N_NEIGHBORS = N_NEIGHBORS
         self.threshold = threshold
         self.resolution = resolution
+        self.projector = PROCESSProjector(self.model,self.data_provider.content_path, '',self.DEVICE)
+        self.train_data = self.data_provider.train_representation(self.iteration)
+        self.train_data = self.train_data.reshape(self.train_data.shape[0],self.train_data.shape[1])
+        self.mul = mul
         
 
     def al_loader(self):
         print("evluating")
-        
         # This method calculates the loss of each sample in the dataset.
         # It returns a list of losses and updates the edge loader with the inverse of these losses as weights.
         losses = []
-        # Ensure the model is in evaluation mode
         
-        projector = PROCESSProjector(self.model,self.data_provider.content_path, '',self.DEVICE)
-        grid_generator = GridGenerator(self.data_provider,self.iteration,projector, self.threshold, self.resolution)
+        # generate grid samples
+        grid_generator = GridGenerator(self.data_provider,self.iteration,self.projector, self.threshold, self.resolution)
         self.grid_high_mask = grid_generator.gen_grids_near_to_training_data()
         print("all near training data grids shape:", self.grid_high_mask.shape)
-        evaluator = Evaluator(self.data_provider, projector)
+        evaluator = Evaluator(self.data_provider, self.projector)
         evaluator.eval_inv_train(self.iteration)
         evaluator.eval_inv_test(self.iteration)
+        # Ensure the model is in evaluation mode
         self.model.eval()
 
         grid_pred_ = self.data_provider.get_pred(self.iteration, self.grid_high_mask)
 
         grid_pred = grid_pred_.argmax(axis=1)
-        self.grid_high_mask = torch.tensor(self.grid_high_mask).to(device=self.DEVICE, dtype=torch.float32)
-        grid_second_high_mask = self.model(self.grid_high_mask,self.grid_high_mask)['recon'][0]
-        grid_second_high_mask = grid_second_high_mask.cpu().detach().numpy()
+        # self.grid_high_mask = torch.tensor(self.grid_high_mask).to(device=self.DEVICE, dtype=torch.float32)
+        grid_high_mask_emb = self.projector.batch_project(self.iteration, self.grid_high_mask )
+        grid_second_high_mask = self.projector.batch_inverse(self.iteration, grid_high_mask_emb)
 
         
         ### base on pred res find error
@@ -974,12 +977,24 @@ class PROXYALMODITrainer(SingleVisTrainer):
         grid_second_pred = grid_second_pred_.argmax(axis=1)
 
         error_indices = [i for i in range(len(grid_pred)) if grid_pred[i] != grid_second_pred[i]]
-        error_grids = self.grid_high_mask.cpu().detach().numpy()[error_indices]
+        self.error_grids = self.grid_high_mask[error_indices]
         _, high_err_indices = self.evaluate_and_find_errors(grid_second_pred_,grid_pred_)
-        high_error_grids = self.grid_high_mask.cpu().detach().numpy()[high_err_indices]
+        high_error_grids = self.grid_high_mask[high_err_indices]
         print("current pred error grids:", len(error_indices), "high_err_indices", len(high_err_indices))
+
+        train_data_torch_pred = self.data_provider.get_pred(self.iteration, self.train_data).argmax(axis=1)
+        train_data_recon = self.projector.batch_inverse(self.iteration, self.projector.batch_project(self.iteration, self.train_data ))
+        _, high_train_err_indices = self.evaluate_and_find_errors(self.data_provider.get_pred(self.iteration, self.train_data),self.data_provider.get_pred(self.iteration, train_data_recon))
+        train_data_recon_pred = self.data_provider.get_pred(self.iteration, train_data_recon).argmax(axis=1)
+        self.train_error_indices = [i for i in range(len(train_data_torch_pred)) if train_data_torch_pred[i] != train_data_recon_pred[i]]
         
-        al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,error_grids)
+
+
+
+
+        
+        al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data[high_train_err_indices]),axis=0))
+        # al_spatial_cons = ErrorALEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,self.error_grids, self.train_error_indices)
 
         # al_spatial_cons = ActiveLearningEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, cluster_points, uncluster_points, self.high_bom)
         al_edge_to, al_edge_from, al_probs, al_feature_vectors, al_attention = al_spatial_cons.construct()
@@ -1011,6 +1026,8 @@ class PROXYALMODITrainer(SingleVisTrainer):
         umap_losses = []
         recon_losses = []
         temporal_losses = []
+        pred_losses = []
+
 
 
         t = tqdm(edge_loader, leave=True, total=len(edge_loader))
@@ -1024,23 +1041,28 @@ class PROXYALMODITrainer(SingleVisTrainer):
             a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
 
             outputs = self.model(edge_to, edge_from)
-            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
+            
+            umap_l, recon_l, temporal_l, loss, pred_loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs, np.concatenate((self.train_data[self.train_error_indices],self.error_grids),axis=0))
+            
      
               
             all_loss.append(loss.mean().item())
             umap_losses.append(umap_l.item())
             recon_losses.append(recon_l.item())
             temporal_losses.append(temporal_l.mean().item())
-
+            pred_losses.append(pred_loss.item())
+           
             # ===================backward====================
             self.optimizer.zero_grad()
             loss.mean().backward()
-            self.optimizer.step()
+            self.optimizer.step()  
+
+
         self._loss = sum(all_loss) / len(all_loss)
         self.model.eval()
-        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
+        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tpred_l:{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
                                                                 sum(recon_losses) / len(recon_losses),
-                                                                sum(temporal_losses) / len(temporal_losses),
+                                                                sum(temporal_losses) / len(temporal_losses), sum(pred_losses) / len(pred_losses),
                                                                 sum(all_loss) / len(all_loss)))
         return self.loss
     
@@ -1058,7 +1080,7 @@ class PROXYALMODITrainer(SingleVisTrainer):
             if self.is_first_active_learning:
                 print("change learning rate")
                 for param_group in self.optimizer.param_groups:
-                    param_group['lr'] *= 0.1  # or set to any value you want
+                    param_group['lr'] *= self.mul  # or set to any value you want
                 self.is_first_active_learning = False
             
         prev_loss = self.loss
@@ -1129,8 +1151,6 @@ class PROXYALMODITrainer(SingleVisTrainer):
 
         return reconstruction_errors, high_error_indices
 
-        
-    
     def record_time(self, save_dir, file_name, operation, iteration, t):
         # save result
         save_file = os.path.join(save_dir, file_name+".json")
@@ -1164,6 +1184,11 @@ class DVIALMODITrainer(SingleVisTrainer):
 
     def al_loader(self):
         print("evluating")
+        
+        projector = PROCESSProjector(self.model,self.data_provider.content_path, '',self.DEVICE)
+        evaluator = Evaluator(self.data_provider, projector)
+        evaluator.eval_inv_train(self.iteration)
+        evaluator.eval_inv_test(self.iteration)
         losses = []
         
         # Ensure the model is in evaluation mode
@@ -1215,7 +1240,7 @@ class DVIALMODITrainer(SingleVisTrainer):
         uncluster_points = np.array(uncluster_points)
         
 
-        al_spatial_cons = ActiveLearningEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, cluster_points, uncluster_points, self.high_bom)
+        al_spatial_cons = ActiveLearningEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, cluster_points, uncluster_points)
         al_edge_to, al_edge_from, al_probs, al_feature_vectors, al_attention = al_spatial_cons.construct()
 
         al_probs = al_probs / (al_probs.max()+1e-3)

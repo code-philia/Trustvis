@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import torch
 from torch import nn
 from singleVis.backend import convert_distance_to_probability, compute_cross_entropy
+from singleVis.projector import PROCESSProjector
 
 import torch
 torch.manual_seed(0)  # 使用固定的种子
@@ -136,7 +137,33 @@ class ReconstructionLoss(nn.Module):
         # loss2 = torch.mean(torch.mean(torch.pow(edge_from - recon_from, 2), 1))
         return (loss1 + loss2)/2
 
+class ReconstructionPredLoss(nn.Module):
+    def __init__(self, data_provider, epoch, beta=1.0,alpha=0.5):
+        super(ReconstructionPredLoss, self).__init__()
+        self._beta = beta
+        self._alpha = alpha
+        self.data_provider = data_provider
+        self.epoch = epoch
 
+    def forward(self, edge_to, edge_from, recon_to, recon_from, a_to, a_from):
+        loss1 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_to), self._beta), torch.pow(edge_to - recon_to, 2)), 1))
+        loss2 = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_from), self._beta), torch.pow(edge_from - recon_from, 2)), 1))
+
+        # calulate
+        combined_edge = torch.cat((edge_from, edge_to), dim=0)  # 拼接 edge_from 和 edge_to
+        combined_recon = torch.cat((recon_from, recon_to), dim=0)  # 拼接 recon_from 和 recon_to
+
+        # org_pred = self.data_provider.get_pred(self.epoch, combined_edge.cpu().detach().numpy())
+        # recon_pred = self.data_provider.get_pred(self.epoch, combined_recon.cpu().detach().numpy())
+
+        # 计算拼接向量的重建损失
+        point_loss = torch.mean(torch.pow(combined_edge - combined_recon, 2))
+        # pred_loss = torch.mean(torch.pow(torch.Tensor(org_pred) - torch.Tensor(recon_pred), 2))
+
+        # 结合边的损失和点的损失
+        total_loss = point_loss + (loss1 + loss2)/2
+    
+        return total_loss
 
 class SmoothnessLoss(nn.Module):
     def __init__(self, margin=0.0):
@@ -253,6 +280,71 @@ class DVILoss(nn.Module):
         loss = umap_l + self.lambd1 * recon_l + self.lambd2 * temporal_l
 
         return umap_l, self.lambd1 *recon_l, self.lambd2 *temporal_l, loss
+    
+
+class DVIALLoss(nn.Module):
+    def __init__(self, umap_loss, recon_loss, temporal_loss, lambd1, lambd2, lambd3, device):
+        super(DVIALLoss, self).__init__()
+        self.umap_loss = umap_loss
+        self.recon_loss = recon_loss
+        self.temporal_loss = temporal_loss
+        self.lambd1 = lambd1
+        self.lambd2 = lambd2
+        self.lambd3 = lambd3
+        self.device = device
+
+        # self.cross_entropy_loss = nn.CrossEntropyLoss()
+        self.mse_loss = nn.MSELoss()
+
+
+    def forward(self, edge_to, edge_from, a_to, a_from, curr_model, outputs,data):
+        embedding_to, embedding_from = outputs["umap"]
+        recon_to, recon_from = outputs["recon"]
+        # TODO stop gradient edge_to_ng = edge_to.detach().clone()
+        # if self.lambd3 != 0:
+        #     data = torch.tensor(data).to(device=self.device, dtype=torch.float32)
+        #     recon_data = curr_model(data,data)['recon'][0]
+        #     pred_loss = self.mse_loss(data, recon_data)
+        # else:
+        #     pred_loss = torch.Tensor(0)
+            
+        recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from, a_to, a_from).to(self.device)
+        umap_l = self.umap_loss(embedding_to, embedding_from).to(self.device)
+        temporal_l = self.temporal_loss(curr_model).to(self.device)
+
+        if self.lambd3 != 0:
+            data = torch.tensor(data).to(device=self.device, dtype=torch.float32)
+            recon_data = curr_model(data,data)['recon'][0]
+            pred_loss = self.mse_loss(data, recon_data)
+            loss = umap_l + self.lambd1 * recon_l + self.lambd2 * temporal_l + self.lambd3 * pred_loss
+            return umap_l, self.lambd1 *recon_l, self.lambd2 *temporal_l, loss, pred_loss
+        else:
+            loss = umap_l + self.lambd1 * recon_l + self.lambd2 * temporal_l 
+            pred_loss = torch.tensor(0.0).to(self.device)
+
+        return umap_l, self.lambd1 *recon_l, self.lambd2 *temporal_l, loss, pred_loss 
+
+
+        
+
+
+class ActiveLearningLoss(nn.Module):
+    def __init__(self, data_provider, iteration, device):
+        super(ActiveLearningLoss, self).__init__()
+        self.data_provider = data_provider
+        self.iteration = iteration
+        self.device = device
+
+    def forward(self, curr_model,data):
+         
+        self.data = torch.tensor(data).to(device=self.device, dtype=torch.float32)
+        recon_data = curr_model(self.data,self.data)['recon'][0]
+        loss = self.cross_entropy_loss(self.data, recon_data)
+        # normalized_loss = torch.sigmoid(loss)
+        return  loss
+
+
+
 
 class MINE(nn.Module):
     def __init__(self):
