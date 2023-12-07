@@ -386,10 +386,11 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
 
 
 class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
-    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, train_data=None) -> None:
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, alpha=0.7, train_data=None) -> None:
         super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
         self.iteration = iteration
         self.train_data = train_data
+        self.alpha = alpha
     
     def construct(self):
 
@@ -423,7 +424,7 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
         # step 2
         complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
         # step 3
-        edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data)  
+        edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data,self.alpha)  
         feature_vectors = train_data
         pred_model = self.data_provider.prediction_function(self.iteration)
         attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
