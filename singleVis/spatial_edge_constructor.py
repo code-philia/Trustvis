@@ -201,7 +201,7 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         return border
     
 
-    def _construct_boundary_wise_complex(self, train_data, border_centers):
+    def _construct_boundary_wise_complex(self, train_data, border_centers, metric="euclidean"):
         """compute the boundary wise complex
             for each border point, we calculate its k nearest train points
             for each train data, we calculate its k nearest border points
@@ -224,13 +224,38 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         bw_complex, sigmas, rhos = fuzzy_simplicial_set(
             X=fitting_data,
             n_neighbors=self.n_neighbors,
-            metric="euclidean",
+            metric=metric,
             random_state=random_state,
             knn_indices=knn_indices,
             knn_dists=knn_dists,
         )
         return bw_complex, sigmas, rhos, knn_indices
     
+    def _construct_proxy_wise_complex(self, proxy, sample):
+        """compute the boundary wise complex
+            for each proxy point, we calculate its k nearest samples
+        """
+        fitting_data = np.concatenate((proxy, sample), axis=0)
+        # Fit NearestNeighbors model on proxy
+        high_neigh = NearestNeighbors(n_neighbors=self.n_neighbors, radius=0.4)
+        high_neigh.fit(sample)
+        
+
+        # Find k-nearest neighbors in sample for each point in proxy
+        knn_dists, knn_indices = high_neigh.kneighbors(proxy, n_neighbors=self.n_neighbors, return_distance=True)
+        knn_indices = knn_indices + len(proxy)
+
+        random_state = check_random_state(42)
+        bw_complex, sigmas, rhos = fuzzy_simplicial_set(
+            X=fitting_data,
+            n_neighbors=self.n_neighbors,
+            metric="euclidean",
+            random_state=random_state,
+            knn_indices=knn_indices,
+            knn_dists=knn_dists,
+        )
+        return bw_complex, sigmas, rhos, knn_indices
+
 
     def _construct_pred_wise_complex(self, train_data, border_centers, iteration):
         """compute the boundary wise complex
@@ -361,10 +386,10 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
 
 
 class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
-    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors,model) -> None:
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, train_data=None) -> None:
         super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
         self.iteration = iteration
-        self.model = model
+        self.train_data = train_data
     
     def construct(self):
 
@@ -386,19 +411,54 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
                 c. For edges that are common to both complexes, their weights are combined, enhancing the existing connections with predictive insights.
 
         """
+        if  self.train_data !=None and len(self.train_data) > 0:
+            train_data = self.train_data
+            print("train data:", train_data.shape)
+        else:
+            train_data = self.data_provider.train_representation(self.iteration)
+            train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+        
+        if self.b_n_epochs > 0:
+            print("consider boundary")
+            border_centers = self.data_provider.border_representation(self.iteration)
+            # step 1
+            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+            # step 2
+            complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
+            # step 3
+            edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data)  
 
-        train_data = self.data_provider.train_representation(self.iteration)
-        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
-        # step 1
-        complex, _, _, _ = self._construct_fuzzy_complex(train_data)
-        # step 2
-        complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
-        # step 3
-        edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data)  
-        feature_vectors = train_data
-        pred_model = self.data_provider.prediction_function(self.iteration)
-        attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
-        # attention = np.zeros(feature_vectors.shape)
+            ## str1
+            bw_complex, _, _, _ = self._construct_boundary_wise_complex(train_data, border_centers)
+            train_data_pred = self.data_provider.get_pred(self.iteration, train_data)
+            border_centers_pred = self.data_provider.get_pred(self.iteration, border_centers)
+            bw_pred_complex ,_, _, _ = self._construct_boundary_wise_complex(train_data_pred, border_centers_pred, 'cosine')
+
+            # step 3
+            feature_vectors = np.concatenate((train_data, border_centers ), axis=0)
+            bw_edge_to, bw_edge_from, bw_weight = self.merge_complexes(bw_complex, bw_pred_complex,feature_vectors)  
+            
+            edge_to = np.concatenate((edge_to, bw_edge_to), axis=0)
+            edge_from = np.concatenate((edge_from, bw_edge_from), axis=0)
+            weight = np.concatenate((weight, bw_weight), axis=0)
+
+            pred_model = self.data_provider.prediction_function(self.iteration)
+            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
+
+
+            return edge_to, edge_from, weight, feature_vectors, attention
+
+        else:
+            # step 1
+            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+            # step 2
+            complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
+            # step 3
+            edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data)  
+            feature_vectors = train_data
+            pred_model = self.data_provider.prediction_function(self.iteration)
+            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
+            # attention = np.zeros(feature_vectors.shape)
             
         return edge_to, edge_from, weight, feature_vectors, attention
 
@@ -406,8 +466,12 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
         edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
         edge_to_2, edge_from_2, weight_2 = self._construct_step_edge_dataset(complex2, None)
 
-        pred_edge_to_1 = self.data_provider.get_pred(self.iteration, train_data[edge_to_1]).argmax(axis=1)
-        pred_edge_from_1 = self.data_provider.get_pred(self.iteration, train_data[edge_from_1]).argmax(axis=1)
+        train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
+
+        pred_edge_to_1 = train_data_pred[edge_to_1]
+        pred_edge_from_1 = train_data_pred[edge_from_1]
+        pred_edge_to_2 = train_data_pred[edge_to_2]
+        pred_edge_from_2 = train_data_pred[edge_from_2]
 
         merged_edges = {}
 
@@ -418,6 +482,8 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
             merged_edges[edge] = weight_1[i]
         # merge the second edge and weight
         for i in range(len(edge_to_2)):
+            if pred_edge_to_2[i] != pred_edge_from_2[i]:
+                continue  # Skip this edge if predictions do not agree
             edge = (edge_to_2[i], edge_from_2[i])
             if edge in merged_edges:
                 # if we already have the edge strong connection
@@ -461,8 +527,12 @@ class TrustvisProxyEdgeConstructor(SpatialEdgeConstructor):
         proxy_proxy_pred_connection, _, _, _ = self._construct_fuzzy_complex_pred_Diff(self.proxy, self.iteration)
         p_edge_to, p_edge_from, p_weight = self.merge_complexes(proxy_proxy_connection, proxy_proxy_pred_connection,self.proxy) 
         # build proxy-sample-connection
+        
         proxy_sample_connection, _, _, _ = self._construct_boundary_wise_complex(self.proxy, train_data)
+        #TODO select strategy
+        proxy_sample_connection, _, _, _ = self._construct_proxy_wise_complex(self.proxy, train_data)
         proxy_sample_pred_complex, _, _, _ = self._construct_pred_wise_complex(self.proxy, train_data, self.iteration)
+
         edge_to, edge_from, weight = self.merge_complexes(proxy_sample_connection, proxy_sample_pred_complex, np.concatenate((self.proxy, train_data),axis=0)) 
 
         edge_to = np.concatenate((p_edge_to, edge_to), axis=0)
@@ -522,9 +592,7 @@ class TrustvisProxyEdgeConstructor(SpatialEdgeConstructor):
 
         
 
-
-
-
+########################################################################### for active learning #########################################################################
 
 class ErrorALEdgeConstructor(SpatialEdgeConstructor):
     def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors,train_data,error_indices) -> None:

@@ -12,7 +12,8 @@ import copy
 import numpy as np
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.spatial_skeleton_edge_constructor import ActiveLearningEpochSpatialEdgeConstructor
-from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor,ErrorALEdgeConstructor
+
+from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor,ErrorALEdgeConstructor,TrustvisSpatialEdgeConstructor
 from singleVis.edge_dataset import DVIDataHandler
 from singleVis.eval.evaluator import Evaluator
 import sys
@@ -675,102 +676,7 @@ class DVIActiveLearningTrainer(SingleVisTrainer):
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
 
-class TVITrainer(SingleVisTrainer):
-    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, adv_edge_loader, DEVICE):
-        super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
-        self.adv_edge_loader = adv_edge_loader  # adversarial data loader
-    
-    def disable_grad(self, model):
-        for param in model.parameters():
-            param.requires_grad = False  
 
-    def enable_grad(self, model):
-        for param in model.parameters():
-            param.requires_grad = True  
-
-    def train_step(self):
-        self.model = self.model.to(device=self.DEVICE)
-
-        self.model.train()
-        all_loss = []
-        umap_losses = []
-        recon_losses = []
-        temporal_losses = []
-
-        t = tqdm(self.edge_loader, leave=True, total=len(self.edge_loader))
-        self.enable_grad(self.model.encoder)# Freeze encoder parameters
-        print("enable")
-        for data in t:
-            edge_to, edge_from, a_to, a_from = data
-
-            edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
-            edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
-            a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
-            a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
-
-            outputs = self.model(edge_to, edge_from)
-            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
-    
-            all_loss.append(loss.mean().item())
-            umap_losses.append(umap_l.item())
-            recon_losses.append(recon_l.item())
-            temporal_losses.append(temporal_l.mean().item())
-
-            self.optimizer.zero_grad()
-            loss.mean().backward()
-            self.optimizer.step()
-
-        # Use adversarial data for decoder
-        # for param in self.model.encoder.parameters():
-        #     param.requires_grad = False  # Freeze encoder parameters
-
-        # for param in self.model.decoder.parameters():
-        #     param.requires_grad = True  # Unfreeze decoder parameters
-
-        adv_t = tqdm(self.adv_edge_loader, leave=True, total=len(self.adv_edge_loader))
-        # adv_t = iter(self.adv_edge_loader)
-        self.disable_grad(self.model.encoder)# Freeze encoder parameters
-        print("disable")
-        for adv_data in adv_t:
-            
-
-            adv_edge_to, adv_edge_from, adv_a_to, adv_a_from = adv_data
-
-            adv_edge_to = adv_edge_to.to(device=self.DEVICE, dtype=torch.float32)
-            adv_edge_from = adv_edge_from.to(device=self.DEVICE, dtype=torch.float32)
-            adv_a_to = adv_a_to.to(device=self.DEVICE, dtype=torch.float32)
-            adv_a_from = adv_a_from.to(device=self.DEVICE, dtype=torch.float32)
-
-            adv_outputs = self.model(adv_edge_to, adv_edge_from)
-            adv_umap_l, adv_recon_l, adv_temporal_l, adv_loss = self.criterion(adv_edge_to, adv_edge_from, adv_a_to, adv_a_from, self.model, adv_outputs)
-
-            # Only update decoder
-            self.optimizer.zero_grad()
-            adv_loss.mean().backward()
-            self.optimizer.step()
-
-        self._loss = sum(all_loss) / len(all_loss)
-        self.model.eval()
-        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
-                                                                sum(recon_losses) / len(recon_losses),
-                                                                sum(temporal_losses) / len(temporal_losses),
-                                                                sum(all_loss) / len(all_loss)))
-        return self._loss
-    
-    def record_time(self, save_dir, file_name, operation, iteration, t):
-        # save result
-        save_file = os.path.join(save_dir, file_name+".json")
-        if not os.path.exists(save_file):
-            evaluation = dict()
-        else:
-            f = open(save_file, "r")
-            evaluation = json.load(f)
-            f.close()
-        if operation not in evaluation.keys():
-            evaluation[operation] = dict()
-        evaluation[operation][iteration] = round(t, 3)
-        with open(save_file, 'w') as f:
-            json.dump(evaluation, f)
 
 class DVIReFineTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE,data, disable_encoder_grad=False, **kwargs):
@@ -990,6 +896,7 @@ class PROXYALMODITrainer(SingleVisTrainer):
         
         
         al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data[high_train_err_indices]),axis=0))
+        # al_spatial_cons = TrustvisSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data[high_train_err_indices]),axis=0))
         # al_spatial_cons = ErrorALEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,self.error_grids, self.train_error_indices)
 
         # al_spatial_cons = ActiveLearningEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, cluster_points, uncluster_points, self.high_bom)
@@ -1162,6 +1069,232 @@ class PROXYALMODITrainer(SingleVisTrainer):
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
 
+class TRUSTALTrainer(SingleVisTrainer):
+    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, iteration, data_provider, prev_model, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, threshold, resolution, mul, **kwargs):
+        super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, **kwargs)
+        self.is_first_active_learning = True  # Add this line
+        # self.high_bom = high_bom
+        # self.high_rad = high_rad
+        self.iteration = iteration
+        self.data_provider = data_provider
+        self.prev_model = prev_model
+        self.S_N_EPOCHS = S_N_EPOCHS
+        self.B_N_EPOCHS = B_N_EPOCHS
+        self.N_NEIGHBORS = N_NEIGHBORS
+        self.threshold = threshold
+        self.resolution = resolution
+        self.projector = PROCESSProjector(self.model,self.data_provider.content_path, '',self.DEVICE)
+        self.train_data = self.data_provider.train_representation(self.iteration)
+        self.train_data = self.train_data.reshape(self.train_data.shape[0],self.train_data.shape[1])
+        self.mul = mul
+        
+
+    def al_loader(self):
+        print("eval ing")
+        # This method calculates the loss of each sample in the dataset.
+        # It returns a list of losses and updates the edge loader with the inverse of these losses as weights.
+        losses = []
+        
+        # generate grid samples
+        grid_generator = GridGenerator(self.data_provider,self.iteration,self.projector, self.threshold, self.resolution)
+        self.grid_high_mask = grid_generator.gen_grids_near_to_training_data()
+        print("all near training data grids shape:", self.grid_high_mask.shape)
+        evaluator = Evaluator(self.data_provider, self.projector)
+        evaluator.eval_inv_train(self.iteration)
+        evaluator.eval_inv_test(self.iteration)
+        # Ensure the model is in evaluation mode
+        self.model.eval()
+
+        grid_pred_ = self.data_provider.get_pred(self.iteration, self.grid_high_mask)
+
+        grid_pred = grid_pred_.argmax(axis=1)
+        # self.grid_high_mask = torch.tensor(self.grid_high_mask).to(device=self.DEVICE, dtype=torch.float32)
+        grid_high_mask_emb = self.projector.batch_project(self.iteration, self.grid_high_mask )
+        grid_second_high_mask = self.projector.batch_inverse(self.iteration, grid_high_mask_emb)
+        
+        ### base on pred res find error
+        grid_second_pred_ = self.data_provider.get_pred(self.iteration, grid_second_high_mask)
+        grid_second_pred = grid_second_pred_.argmax(axis=1)
+
+        error_indices = [i for i in range(len(grid_pred)) if grid_pred[i] != grid_second_pred[i]]
+        self.error_grids = self.grid_high_mask[error_indices]
+        _, high_err_indices = self.evaluate_and_find_errors(grid_second_pred_,grid_pred_)
+        high_error_grids = self.grid_high_mask[high_err_indices]
+        print("current pred error grids:", len(error_indices), "high_err_indices", len(high_err_indices))
+
+
+        # TODO select best consructor
+        al_spatial_cons = TrustvisSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data),axis=0))
+        # al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data[high_train_err_indices]),axis=0))
+        # al_spatial_cons = ErrorALEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,self.error_grids, self.train_error_indices)
+
+        # al_spatial_cons = ActiveLearningEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, cluster_points, uncluster_points, self.high_bom)
+        al_edge_to, al_edge_from, al_probs, al_feature_vectors, al_attention = al_spatial_cons.construct()
+
+        al_probs = al_probs / (al_probs.max()+1e-3)
+        eliminate_zeros = al_probs>5e-2    #1e-3
+        al_edge_to = al_edge_to[eliminate_zeros]
+        al_edge_from = al_edge_from[eliminate_zeros]
+        al_probs = al_probs[eliminate_zeros]
+        
+        dataset = DVIDataHandler(al_edge_to, al_edge_from, al_feature_vectors, al_attention)
+
+        n_samples = int(np.sum(self.S_N_EPOCHS * al_probs) // 1)
+
+        # chose sampler based on the number of dataset
+        if len(al_edge_to) > pow(2,24):
+            sampler = CustomWeightedRandomSampler(al_probs, n_samples, replacement=True)
+        else:
+            sampler = WeightedRandomSampler(al_probs, n_samples, replacement=True)
+        new_loader = DataLoader(dataset, batch_size=2000, sampler=sampler, num_workers=8, prefetch_factor=10)
+        # new_loader = ActiveLearningEdgeLoader(current_loader.dataset, weights, batch_size=current_loader.batch_size)
+        return losses, new_loader
+    
+    def train_step(self, edge_loader):
+       
+        self.model = self.model.to(device=self.DEVICE)
+        self.model.train()
+        all_loss = []
+        umap_losses = []
+        recon_losses = []
+        temporal_losses = []
+
+
+
+        t = tqdm(edge_loader, leave=True, total=len(edge_loader))
+        
+        for data in t:
+            edge_to, edge_from, a_to, a_from = data
+
+            edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
+            edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
+            a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
+            a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
+
+            outputs = self.model(edge_to, edge_from)
+
+            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
+            
+       
+            all_loss.append(loss.mean().item())
+            umap_losses.append(umap_l.item())
+            recon_losses.append(recon_l.item())
+            temporal_losses.append(temporal_l.mean().item())
+            # pred_losses.append(pred_loss.item())
+           
+            # ===================backward====================
+            self.optimizer.zero_grad()
+            loss.mean().backward()
+            self.optimizer.step()  
+
+
+        self._loss = sum(all_loss) / len(all_loss)
+        self.model.eval()
+        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
+                                                                sum(recon_losses) / len(recon_losses),
+                                                                sum(temporal_losses) / len(temporal_losses),
+                                                                sum(all_loss) / len(all_loss)))
+        return self.loss
+    
+    def run_epoch(self, epoch, current_loader, is_active_learning=False, is_full_data=False):
+        print("====================\nepoch:{}\n===================".format(epoch+1))
+        start_time = time.time()
+
+        if is_active_learning and is_full_data == False:
+            
+            _, current_loader = self.al_loader()
+                ### generate grid for al
+
+
+            # Adjust learning rate for active learning
+            if self.is_first_active_learning:
+                print("change learning rate")
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] *= self.mul  # or set to any value you want
+                self.is_first_active_learning = False
+            
+        prev_loss = self.loss
+
+        if is_full_data:
+            print("full data")
+            loss = self.train_step(self.edge_loader)  # use DVITrainer's train_step
+        else:
+            loss = self.train_step(current_loader)  # use DVITrainer's train_step
+        
+        self.lr_scheduler.step()
+
+        elapsed_time = time.time() - start_time
+        print("Epoch completed in: {:.2f} seconds".format(elapsed_time))
+
+        return prev_loss, loss, current_loader
+    
+    def train(self, PATIENT, MAX_EPOCH_NUMS):
+        start_flag = 1
+        if start_flag:
+            current_loader = self.edge_loader
+            start_flag = 0
+        print("ininin in dvi")
+        patient = PATIENT
+        time_start = time.time()
+        # Pretraining
+        # for epoch in range(10):
+        #     print("Pretraining")
+        #     _, _, current_loader= self.run_epoch(epoch, current_loader, is_active_learning=False,is_full_data=True)
+
+
+        for epoch in range(MAX_EPOCH_NUMS):
+            print("In active learning")
+            # is_full_data = (epoch % 3 == 0)  # retrain with full data every RE_TRAINING_INTERVAL epochs
+            prev_loss, loss, current_loader = self.run_epoch(epoch, current_loader, is_active_learning=True, is_full_data=False)
+      
+            # Early stop, check whether converge or not
+            if abs(prev_loss - loss) < 5E-3:
+                if patient == 0:
+                    break
+                else:
+                    patient -= 1
+            else:
+                patient = PATIENT
+
+        time_end = time.time()
+        time_spend = time_end - time_start
+        print("Time spend: {:.2f} for training vis model...".format(time_spend))   
+
+        self.prev_model.load_state_dict(self.model.state_dict())
+        for param in self.prev_model.parameters():
+            param.requires_grad = False
+        w_prev = dict(self.prev_model.named_parameters())
+    
+    def evaluate_and_find_errors(self, data, recon_data, error_threshold=0.1):
+       
+        high_error_indices = []
+        reconstruction_errors = []
+
+        for i, (x, x_prime) in enumerate(zip(data, recon_data)):
+            # 计算重构误差，这里使用 NumPy 来计算均方误差
+            reconstruction_error = np.mean((x - x_prime) ** 2)
+            reconstruction_errors.append(reconstruction_error)
+
+            # 如果误差超过阈值，则标记为高误差点
+            if reconstruction_error > error_threshold:
+                high_error_indices.append(i)
+
+        return reconstruction_errors, high_error_indices
+
+    def record_time(self, save_dir, file_name, operation, iteration, t):
+        # save result
+        save_file = os.path.join(save_dir, file_name+".json")
+        if not os.path.exists(save_file):
+            evaluation = dict()
+        else:
+            f = open(save_file, "r")
+            evaluation = json.load(f)
+            f.close()
+        if operation not in evaluation.keys():
+            evaluation[operation] = dict()
+        evaluation[operation][iteration] = round(t, 3)
+        with open(save_file, 'w') as f:
+            json.dump(evaluation, f)
 
 class DVIALMODITrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, grid_high_mask, high_bom, high_rad, iteration, data_provider, prev_model, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, **kwargs):
