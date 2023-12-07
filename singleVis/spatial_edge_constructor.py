@@ -394,7 +394,7 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
     def construct(self):
 
         """
-            Class: Complex Constructor with Prediction Semantics
+        Class: Complex Constructor with Prediction Semantics
     
             This function constructs a complex by integrating train data with prediction semantics.
             Step 1: Construct the Initial Complex
@@ -418,47 +418,16 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
             train_data = self.data_provider.train_representation(self.iteration)
             train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
         
-        if self.b_n_epochs > 0:
-            print("consider boundary")
-            border_centers = self.data_provider.border_representation(self.iteration)
-            # step 1
-            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
-            # step 2
-            complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
-            # step 3
-            edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data)  
-
-            ## str1
-            bw_complex, _, _, _ = self._construct_boundary_wise_complex(train_data, border_centers)
-            train_data_pred = self.data_provider.get_pred(self.iteration, train_data)
-            border_centers_pred = self.data_provider.get_pred(self.iteration, border_centers)
-            bw_pred_complex ,_, _, _ = self._construct_boundary_wise_complex(train_data_pred, border_centers_pred, 'cosine')
-
-            # step 3
-            feature_vectors = np.concatenate((train_data, border_centers ), axis=0)
-            bw_edge_to, bw_edge_from, bw_weight = self.merge_complexes(bw_complex, bw_pred_complex,feature_vectors)  
-            
-            edge_to = np.concatenate((edge_to, bw_edge_to), axis=0)
-            edge_from = np.concatenate((edge_from, bw_edge_from), axis=0)
-            weight = np.concatenate((weight, bw_weight), axis=0)
-
-            pred_model = self.data_provider.prediction_function(self.iteration)
-            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
-
-
-            return edge_to, edge_from, weight, feature_vectors, attention
-
-        else:
-            # step 1
-            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
-            # step 2
-            complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
-            # step 3
-            edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data)  
-            feature_vectors = train_data
-            pred_model = self.data_provider.prediction_function(self.iteration)
-            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
-            # attention = np.zeros(feature_vectors.shape)
+        # step 1
+        complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+        # step 2
+        complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
+        # step 3
+        edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data)  
+        feature_vectors = train_data
+        pred_model = self.data_provider.prediction_function(self.iteration)
+        attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
+        # attention = np.zeros(feature_vectors.shape)
             
         return edge_to, edge_from, weight, feature_vectors, attention
 
