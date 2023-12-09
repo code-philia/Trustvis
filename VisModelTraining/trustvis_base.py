@@ -52,12 +52,16 @@ parser.add_argument('--content_path', type=str,default=new_path)
 # parser.add_argument('--start', type=int,default=1)
 # parser.add_argument('--end', type=int,default=3)
 parser.add_argument('--epoch' , type=int, default=3)
+parser.add_argument('--pred' , type=float, default=0.5)
 
 # parser.add_argument('--epoch_end', type=int)
 parser.add_argument('--epoch_period', type=int,default=1)
 parser.add_argument('--preprocess', type=int,default=0)
 parser.add_argument('--base',type=bool,default=False)
 args = parser.parse_args()
+#TODO why?
+pred_lambda = args.pred
+
 
 CONTENT_PATH = args.content_path
 sys.path.append(CONTENT_PATH)
@@ -172,8 +176,9 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     
 
     t0 = time.time()
+    print("pred_lambda",pred_lambda)
     ##### construct the spitial complex
-    spatial_cons = TrustvisSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, 0.7)
+    spatial_cons = TrustvisSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, pred_lambda)
     edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
     t1 = time.time()
 

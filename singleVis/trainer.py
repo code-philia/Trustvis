@@ -13,7 +13,7 @@ import numpy as np
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.spatial_skeleton_edge_constructor import ActiveLearningEpochSpatialEdgeConstructor
 
-from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor,ErrorALEdgeConstructor,TrustvisSpatialEdgeConstructor
+from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor,ErrorALEdgeConstructor,TrustvisSpatialEdgeConstructor,TrustALSpatialEdgeConstructor
 from singleVis.edge_dataset import DVIDataHandler
 from singleVis.eval.evaluator import Evaluator
 import sys
@@ -1097,7 +1097,7 @@ class TRUSTALTrainer(SingleVisTrainer):
         
         # generate grid samples
         grid_generator = GridGenerator(self.data_provider,self.iteration,self.projector, self.threshold, self.resolution)
-        self.grid_high_mask = grid_generator.gen_grids_near_to_training_data()
+        self.grid_high_mask = grid_generator.gen_grids_near_to_training_data(alpha=0.5)
         print("all near training data grids shape:", self.grid_high_mask.shape)
         evaluator = Evaluator(self.data_provider, self.projector)
         evaluator.eval_inv_train(self.iteration)
@@ -1124,11 +1124,7 @@ class TRUSTALTrainer(SingleVisTrainer):
 
 
         # TODO select best consructor
-        al_spatial_cons = TrustvisSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data),axis=0))
-        # al_spatial_cons = PROXYEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data[high_train_err_indices]),axis=0))
-        # al_spatial_cons = ErrorALEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS,self.error_grids, self.train_error_indices)
-
-        # al_spatial_cons = ActiveLearningEpochSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, cluster_points, uncluster_points, self.high_bom)
+        al_spatial_cons = TrustALSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data),axis=0))
         al_edge_to, al_edge_from, al_probs, al_feature_vectors, al_attention = al_spatial_cons.construct()
 
         al_probs = al_probs / (al_probs.max()+1e-3)

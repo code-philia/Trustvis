@@ -481,6 +481,85 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
         with open(file_path, "w") as f:
             json.dump(ti, f)
 
+# TODO active learning
+class TrustALSpatialEdgeConstructor(SpatialEdgeConstructor):
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, train_data,alpha=0.7, ) -> None:
+        super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
+        self.iteration = iteration
+        self.train_data = train_data
+        self.alpha = alpha
+    
+    def construct(self):
+
+        """
+        Class: Complex Constructor use in active learning
+
+        """
+        train_data = self.train_data
+
+        print("shape of trian data", train_data.shape)
+        complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+        complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
+        # step 3
+        edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data,self.alpha)  
+        # step 3
+       
+        feature_vectors = train_data
+        pred_model = self.data_provider.prediction_function(self.iteration)
+        attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
+        # attention = np.zeros(feature_vectors.shape)
+            
+        return edge_to, edge_from, weight, feature_vectors, attention
+
+    def merge_complexes(self, complex1, complex2,train_data,alpha=0.7):
+        edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
+        edge_to_2, edge_from_2, weight_2 = self._construct_step_edge_dataset(complex2, None)
+
+        train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
+
+        pred_edge_to_1 = train_data_pred[edge_to_1]
+        pred_edge_from_1 = train_data_pred[edge_from_1]
+        pred_edge_to_2 = train_data_pred[edge_to_2]
+        pred_edge_from_2 = train_data_pred[edge_from_2]
+
+        merged_edges = {}
+
+        for i in range(len(edge_to_1)):
+            if pred_edge_to_1[i] != pred_edge_from_1[i]:
+                continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
+            edge = (edge_to_1[i], edge_from_1[i])
+            merged_edges[edge] = weight_1[i]
+        # merge the second edge and weight
+        for i in range(len(edge_to_2)):
+            if pred_edge_to_2[i] != pred_edge_from_2[i]:
+                continue  # Skip this edge if predictions do not agree
+            edge = (edge_to_2[i], edge_from_2[i])
+            if edge in merged_edges:
+                # if we already have the edge strong connection
+                merged_edges[edge] = (1-alpha) * merged_edges[edge] + alpha * weight_2[i] 
+            else:
+                # if we do not have the edge add it to 
+                merged_edges[edge] = weight_2[i]
+
+        merged_edge_to, merged_edge_from, merged_weight = zip(*[
+            (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+        ])
+
+        return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
+
+    def record_time(self, save_dir, file_name, operation, t):
+        file_path = os.path.join(save_dir, file_name+".json")
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                ti = json.load(f)
+        else:
+            ti = dict()
+        if operation not in ti.keys():
+            ti[operation] = dict()
+        ti[operation][str(self.iteration)] = t
+        with open(file_path, "w") as f:
+            json.dump(ti, f)
+
 """ proxy based edge complex construction"""
 class TrustvisProxyEdgeConstructor(SpatialEdgeConstructor):
     def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, proxy) -> None:
