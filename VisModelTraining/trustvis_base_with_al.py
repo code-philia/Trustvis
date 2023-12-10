@@ -13,7 +13,7 @@ import argparse
 from umap.umap_ import find_ab_params
 
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, DummyTemporalLoss, DVIALLoss
+from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, DummyTemporalLoss, DVIALLoss,UmapLossfix_neg,TrustALLoss
 from singleVis.edge_dataset import DVIDataHandler
 from singleVis.trainer import TRUSTALTrainer
 from singleVis.data import NormalDataProvider
@@ -97,7 +97,7 @@ model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 negative_sample_rate = 5
 min_dist = .1
 _a, _b = find_ab_params(1.0, min_dist)
-umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
+# umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
 recon_loss_fn = ReconstructionLoss(beta=1.0)
 # Define Projector
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=BASE_MODEL_NAME, device=DEVICE) # vis_model_name init dvi
@@ -109,7 +109,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     # Define DVI Loss
     if start_flag:
         temporal_loss_fn = DummyTemporalLoss(DEVICE)
-        criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0, device=DEVICE)
+        umap_loss_fn = UmapLossfix_neg(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
+        criterion = TrustALLoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0, device=DEVICE)
         start_flag = 0
     else:
         # TODO AL mode, redefine train_representation
@@ -130,7 +131,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     save_model = torch.load(file_path, map_location="cpu")
     model.load_state_dict(save_model["state_dict"])
 
-    trainer = TRUSTALTrainer(model, criterion, optimizer, lr_scheduler, edge_loader=None, DEVICE=DEVICE,iteration=iteration, data_provider=data_provider, prev_model=prev_model, S_N_EPOCHS=S_N_EPOCHS, B_N_EPOCHS=B_N_EPOCHS, N_NEIGHBORS=N_NEIGHBORS,threshold=1,resolution=400, mul=0.1)
+    trainer = TRUSTALTrainer(model, criterion, optimizer, lr_scheduler, edge_loader=None, DEVICE=DEVICE,iteration=iteration, data_provider=data_provider, prev_model=prev_model, S_N_EPOCHS=S_N_EPOCHS, B_N_EPOCHS=B_N_EPOCHS, N_NEIGHBORS=N_NEIGHBORS,threshold=1,resolution=400, mul=0.1, alpha=0.1)
 
     t2=time.time()
     trainer.train(PATIENT, MAX_EPOCH)
