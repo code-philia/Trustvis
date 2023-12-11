@@ -183,7 +183,7 @@ def batch_run(model, data, verbose=1, batch_size=200):
     data = data.to(dtype=torch.float)
     output = None
     n_batches = max(math.ceil(len(data) / batch_size), 1)
-    if verbose:
+    if verbose == 1:
         for b in tqdm.tqdm(range(n_batches)):
             r1, r2 = b * batch_size, (b + 1) * batch_size
             inputs = data[r1:r2]

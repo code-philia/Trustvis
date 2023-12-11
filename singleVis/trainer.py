@@ -1127,9 +1127,8 @@ class TRUSTALTrainer(SingleVisTrainer):
 
 
         # TODO select best consructor
-        
-        self.retrain_data = np.concatenate((self.grid_high_mask, self.train_data),axis=0)
-        
+        # self.retrain_data = np.concatenate((self.grid_high_mask, self.train_data),axis=0)
+        self.retrain_data = np.concatenate((self.error_grids, self.train_data),axis=0)
         al_spatial_cons = TrustALSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, self.retrain_data)
         al_edge_to, al_edge_from, al_probs, al_feature_vectors, al_attention = al_spatial_cons.construct()
 
@@ -1138,9 +1137,9 @@ class TRUSTALTrainer(SingleVisTrainer):
         al_edge_to = al_edge_to[eliminate_zeros]
         al_edge_from = al_edge_from[eliminate_zeros]
         al_probs = al_probs[eliminate_zeros]
+
         pred = self.data_provider.get_pred(self.iteration, al_feature_vectors)
-        dataset = TrustDataHandler(al_edge_to, al_edge_from, al_feature_vectors, al_attention,pred)
-        print(dataset)
+        dataset = TrustDataHandler(al_edge_to, al_edge_from, al_feature_vectors, al_attention, pred)
 
         n_samples = int(np.sum(self.S_N_EPOCHS * al_probs) // 1)
 

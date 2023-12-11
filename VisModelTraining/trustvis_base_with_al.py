@@ -80,6 +80,7 @@ EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 # Define hyperparameters
 GPU_ID = 0
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
+print("device:", DEVICE)
 
 import Model.model as subject_model
 net = eval("subject_model.{}()".format(NET))
