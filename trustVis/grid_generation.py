@@ -63,6 +63,38 @@ class GridGenerator:
             if num_differences_rate > alpha:
                 refine_train_data_indicates.append(i)
         return train_data[refine_train_data_indicates], diff_rate_list
+    
+    def get_neg_pair_index(self, train_data):
+        pred_res = self.data_provider.get_pred(self.epoch, train_data).argmax(axis=1)
+        n_trees = min(64, 5 + int(round((train_data.shape[0]) ** 0.5 / 20.0)))
+        n_iters = max(5, int(round(np.log2(train_data.shape[0]))))
+
+        nnd = NNDescent(
+            train_data,
+            n_neighbors=self.n_neighbors,
+            metric='euclidean',
+            n_trees=n_trees,
+            n_iters=n_iters,
+            max_candidates=60,
+            verbose=True
+        )
+        knn_indices, knn_dists = nnd.neighbor_graph
+
+        embedding_neg_from = []
+        embedding_neg_to = []
+
+       
+        for i in range(len(train_data)):
+            pred_ = pred_res[i]
+            k_n_indices = knn_indices[i]
+            pred_list = pred_res[k_n_indices]
+
+            for j in range(1, len(k_n_indices)):
+                if pred_ != pred_list[j]:
+                    embedding_neg_from.append(i)
+                    embedding_neg_to.append(k_n_indices[j])
+   
+        return embedding_neg_from, embedding_neg_to
 
 
     def gen_grids_near_to_training_data(self,alpha=0.5):

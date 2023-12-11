@@ -14,13 +14,15 @@ from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.spatial_skeleton_edge_constructor import ActiveLearningEpochSpatialEdgeConstructor
 
 from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor,ErrorALEdgeConstructor,TrustvisSpatialEdgeConstructor,TrustALSpatialEdgeConstructor
-from singleVis.edge_dataset import DVIDataHandler
+from singleVis.edge_dataset import DVIDataHandler,TrustDataHandler
 from singleVis.eval.evaluator import Evaluator
 import sys
 sys.path.append('..')
 from trustVis.grid_generation import GridGenerator
 from singleVis.projector import PROCESSProjector
 import torch.nn as nn
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
 torch.manual_seed(0)  # 使用固定的种子
 torch.cuda.manual_seed_all(0)
@@ -1070,7 +1072,7 @@ class PROXYALMODITrainer(SingleVisTrainer):
             json.dump(evaluation, f)
 
 class TRUSTALTrainer(SingleVisTrainer):
-    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, iteration, data_provider, prev_model, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, threshold, resolution, mul, **kwargs):
+    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, iteration, data_provider, prev_model, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, threshold, resolution, mul, alpha, **kwargs):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, **kwargs)
         self.is_first_active_learning = True  # Add this line
         # self.high_bom = high_bom
@@ -1087,6 +1089,7 @@ class TRUSTALTrainer(SingleVisTrainer):
         self.train_data = self.data_provider.train_representation(self.iteration)
         self.train_data = self.train_data.reshape(self.train_data.shape[0],self.train_data.shape[1])
         self.mul = mul
+        self.alpha = alpha
         
 
     def al_loader(self):
@@ -1097,7 +1100,7 @@ class TRUSTALTrainer(SingleVisTrainer):
         
         # generate grid samples
         grid_generator = GridGenerator(self.data_provider,self.iteration,self.projector, self.threshold, self.resolution)
-        self.grid_high_mask = grid_generator.gen_grids_near_to_training_data(alpha=0.5)
+        self.grid_high_mask = grid_generator.gen_grids_near_to_training_data(alpha=self.alpha)
         print("all near training data grids shape:", self.grid_high_mask.shape)
         evaluator = Evaluator(self.data_provider, self.projector)
         evaluator.eval_inv_train(self.iteration)
@@ -1124,7 +1127,10 @@ class TRUSTALTrainer(SingleVisTrainer):
 
 
         # TODO select best consructor
-        al_spatial_cons = TrustALSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, np.concatenate((self.error_grids, self.train_data),axis=0))
+        
+        self.retrain_data = np.concatenate((self.grid_high_mask, self.train_data),axis=0)
+        
+        al_spatial_cons = TrustALSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, self.retrain_data)
         al_edge_to, al_edge_from, al_probs, al_feature_vectors, al_attention = al_spatial_cons.construct()
 
         al_probs = al_probs / (al_probs.max()+1e-3)
@@ -1132,8 +1138,9 @@ class TRUSTALTrainer(SingleVisTrainer):
         al_edge_to = al_edge_to[eliminate_zeros]
         al_edge_from = al_edge_from[eliminate_zeros]
         al_probs = al_probs[eliminate_zeros]
-        
-        dataset = DVIDataHandler(al_edge_to, al_edge_from, al_feature_vectors, al_attention)
+        pred = self.data_provider.get_pred(self.iteration, al_feature_vectors)
+        dataset = TrustDataHandler(al_edge_to, al_edge_from, al_feature_vectors, al_attention,pred)
+        print(dataset)
 
         n_samples = int(np.sum(self.S_N_EPOCHS * al_probs) // 1)
 
@@ -1155,22 +1162,24 @@ class TRUSTALTrainer(SingleVisTrainer):
         recon_losses = []
         temporal_losses = []
 
-
-
         t = tqdm(edge_loader, leave=True, total=len(edge_loader))
         
         for data in t:
-            edge_to, edge_from, a_to, a_from = data
+            edge_to, edge_from, a_to, a_from, edge_to_pred, edge_from_pred = data
+            
 
             edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
             edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
             a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
             a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
 
+            edge_to_pred = torch.Tensor(edge_to_pred).to(device=self.DEVICE, dtype=torch.float32)
+            edge_from_pred = torch.Tensor(edge_from_pred).to(device=self.DEVICE, dtype=torch.float32)
+
+
             outputs = self.model(edge_to, edge_from)
 
-            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
-            
+            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs,edge_to_pred, edge_from_pred)
        
             all_loss.append(loss.mean().item())
             umap_losses.append(umap_l.item())

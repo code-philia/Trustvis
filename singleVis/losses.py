@@ -75,6 +75,75 @@ class UmapLoss(nn.Module):
 
         return torch.mean(ce_loss)
 
+"""
+use fixed negative sample
+"""
+class UmapLossfix_neg(nn.Module):
+    def __init__(self, negative_sample_rate, device, _a=1.0, _b=1.0, repulsion_strength=1.0):
+        super(UmapLossfix_neg, self).__init__()
+
+        self._negative_sample_rate = negative_sample_rate
+        self._a = _a,
+        self._b = _b,
+        self._repulsion_strength = repulsion_strength
+        self.DEVICE = torch.device(device)
+
+    @property
+    def a(self):
+        return self._a[0]
+
+    @property
+    def b(self):
+        return self._b[0]
+
+    def forward(self, embedding_to, embedding_from, edge_to_pred, edge_from_pred):
+       
+
+        batch_size = embedding_to.shape[0]
+        # get negative samples
+        embedding_neg_to = torch.repeat_interleave(embedding_to, self._negative_sample_rate, dim=0)
+        repeat_neg = torch.repeat_interleave(embedding_from, self._negative_sample_rate, dim=0)
+        randperm = torch.randperm(repeat_neg.shape[0])
+        embedding_neg_from = repeat_neg[randperm]
+
+        pred_neg_to = torch.repeat_interleave(edge_to_pred, self._negative_sample_rate, dim=0)
+        pred_neg_from = torch.repeat_interleave(edge_from_pred, self._negative_sample_rate, dim=0)[randperm]
+
+    
+        #TODO  select better stategy select the prediction cosine distance >0.5 as negative samples
+        prediction_diff = torch.abs(pred_neg_to - pred_neg_from)
+        valid_neg_indices = torch.where(prediction_diff > 0.5)[0]
+        embedding_neg_to = embedding_neg_to[valid_neg_indices]
+        embedding_neg_from = embedding_neg_from[valid_neg_indices]
+      
+        #  distances between samples (and negative samples)
+        distance_embedding = torch.cat(
+            (
+                torch.norm(embedding_to - embedding_from, dim=1),
+                torch.norm(embedding_neg_to - embedding_neg_from, dim=1),
+            ),
+            dim=0,
+        )
+        probabilities_distance = convert_distance_to_probability(
+            distance_embedding, self.a, self.b
+        )
+        probabilities_distance = probabilities_distance.to(self.DEVICE)
+
+        num_neg_samples = embedding_neg_to.shape[0]  # valied negative samples
+        # set true probabilities based on negative sampling
+        probabilities_graph = torch.cat(
+            (torch.ones(batch_size), torch.zeros(num_neg_samples)), dim=0,
+        )
+        probabilities_graph = probabilities_graph.to(device=self.DEVICE)
+
+        # compute cross entropy
+        (_, _, ce_loss) = compute_cross_entropy(
+            probabilities_graph,
+            probabilities_distance,
+            repulsion_strength=self._repulsion_strength,
+        )
+
+        return torch.mean(ce_loss)
 
 # class ReconstructionLoss(nn.Module):
 #     def __init__(self, beta=1.0):
@@ -318,7 +387,32 @@ class DVILoss(nn.Module):
         loss = umap_l + self.lambd1 * recon_l + self.lambd2 * temporal_l
 
         return umap_l, self.lambd1 *recon_l, self.lambd2 *temporal_l, loss
-    
+
+
+class TrustALLoss(nn.Module):
+    def __init__(self, umap_loss, recon_loss, temporal_loss, lambd1, lambd2, device):
+        super(TrustALLoss, self).__init__()
+        self.umap_loss = umap_loss
+        self.recon_loss = recon_loss
+        self.temporal_loss = temporal_loss
+        self.lambd1 = lambd1
+        self.lambd2 = lambd2
+        self.device = device
+
+    def forward(self, edge_to, edge_from, a_to, a_from, curr_model, outputs, edge_to_pred, edge_from_pred):
+        embedding_to, embedding_from = outputs["umap"]
+        recon_to, recon_from = outputs["recon"]
+        # TODO stop gradient edge_to_ng = edge_to.detach().clone()
+
+        recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from, a_to, a_from).to(self.device)
+        umap_l = self.umap_loss(embedding_to, embedding_from,edge_to_pred, edge_from_pred).to(self.device)
+        temporal_l = self.temporal_loss(curr_model).to(self.device)
+
+        loss = umap_l + self.lambd1 * recon_l + self.lambd2 * temporal_l
+
+        return umap_l, self.lambd1 *recon_l, self.lambd2 *temporal_l, loss
+        
+       
 
 class DVIALLoss(nn.Module):
     def __init__(self, umap_loss, recon_loss, temporal_loss, lambd1, lambd2, lambd3, device):
