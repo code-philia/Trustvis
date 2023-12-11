@@ -112,7 +112,7 @@ VIS_MODEL_NAME = 'trustbase' ### saved_as VIS_MODEL_NAME.pth
 
 
 # Define hyperparameters
-GPU_ID = 0
+GPU_ID = 1
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
 print("device", DEVICE)
 
