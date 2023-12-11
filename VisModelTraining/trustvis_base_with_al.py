@@ -12,6 +12,7 @@ import argparse
 
 from umap.umap_ import find_ab_params
 
+
 from singleVis.SingleVisualizationModel import VisModel
 from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, DummyTemporalLoss, DVIALLoss,UmapLossfix_neg,TrustALLoss
 from singleVis.edge_dataset import DVIDataHandler
@@ -21,6 +22,7 @@ from singleVis.projector import DVIProjector
 from singleVis.eval.evaluator import Evaluator
 from singleVis.utils import find_neighbor_preserving_rate
 from singleVis.visualizer import visualizer
+from trustVis.data_generation import DataGeneration
 import numpy as np
 # from trustVis.skeleton_generator import CenterSkeletonGenerator
 ########################################################################################################################
@@ -37,7 +39,9 @@ parser = argparse.ArgumentParser(description='Process hyperparameters...')
 parser.add_argument('--content_path', type=str)
 parser.add_argument('--base', type=str,default='trustbase')
 parser.add_argument('--epoch', type=int)
+parser.add_argument('--pred', type=float)
 args = parser.parse_args()
+pred_ = args.pred
 
 CONTENT_PATH = args.content_path
 sys.path.append(CONTENT_PATH)
@@ -78,7 +82,7 @@ SAVED_NAME = VIS_MODEL_NAME
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
 # Define hyperparameters
-GPU_ID = 0
+GPU_ID = 1
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
 print("device:", DEVICE)
 
@@ -98,7 +102,7 @@ model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 negative_sample_rate = 5
 min_dist = .1
 _a, _b = find_ab_params(1.0, min_dist)
-# umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
+umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
 recon_loss_fn = ReconstructionLoss(beta=1.0)
 # Define Projector
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=BASE_MODEL_NAME, device=DEVICE) # vis_model_name init dvi
@@ -110,8 +114,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     # Define DVI Loss
     if start_flag:
         temporal_loss_fn = DummyTemporalLoss(DEVICE)
-        umap_loss_fn = UmapLossfix_neg(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
-        criterion = TrustALLoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0, device=DEVICE)
+        # umap_loss_fn = UmapLossfix_neg(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
+        criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0, device=DEVICE)
         start_flag = 0
     else:
         # TODO AL mode, redefine train_representation
@@ -131,8 +135,13 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     file_path = os.path.join(data_provider.content_path, "Model", "Epoch_{}".format(iteration), "{}.pth".format(BASE_MODEL_NAME))
     save_model = torch.load(file_path, map_location="cpu")
     model.load_state_dict(save_model["state_dict"])
+    
 
-    trainer = TRUSTALTrainer(model, criterion, optimizer, lr_scheduler, edge_loader=None, DEVICE=DEVICE,iteration=iteration, data_provider=data_provider, prev_model=prev_model, S_N_EPOCHS=S_N_EPOCHS, B_N_EPOCHS=B_N_EPOCHS, N_NEIGHBORS=N_NEIGHBORS,threshold=1,resolution=400, mul=0.1, alpha=0.1)
+    """generate boundary samples"""
+    DataGenerator = DataGeneration(net, data_provider, iteration, DEVICE, 2)
+    boundary_sample = DataGenerator.get_boundary_sample()
+
+    trainer = TRUSTALTrainer(model, criterion, optimizer, lr_scheduler, edge_loader=None, DEVICE=DEVICE,iteration=iteration, data_provider=data_provider, prev_model=prev_model, S_N_EPOCHS=S_N_EPOCHS, B_N_EPOCHS=B_N_EPOCHS, N_NEIGHBORS=N_NEIGHBORS,threshold=0.1,resolution=400, mul=0.1, diff_pred=0.5, pred_alpha=pred_, boundary_sample=boundary_sample)
 
     t2=time.time()
     trainer.train(PATIENT, MAX_EPOCH)

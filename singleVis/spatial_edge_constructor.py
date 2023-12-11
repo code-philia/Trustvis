@@ -483,7 +483,7 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
 
 # TODO active learning
 class TrustALSpatialEdgeConstructor(SpatialEdgeConstructor):
-    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, train_data,alpha=0.7, ) -> None:
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, train_data,alpha=0.7 ) -> None:
         super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
         self.iteration = iteration
         self.train_data = train_data
@@ -522,60 +522,60 @@ class TrustALSpatialEdgeConstructor(SpatialEdgeConstructor):
         pred_edge_to_2 = train_data_pred[edge_to_2]
         pred_edge_from_2 = train_data_pred[edge_from_2]
 
-        # Vectorized equality check
-        valid_edges_1 = pred_edge_to_1 == pred_edge_from_1
-        valid_edges_2 = pred_edge_to_2 == pred_edge_from_2
+        # # Vectorized equality check
+        # valid_edges_1 = pred_edge_to_1 == pred_edge_from_1
+        # valid_edges_2 = pred_edge_to_2 == pred_edge_from_2
 
-        # Filter the edges and weights based on validity
-        valid_edge_to_1, valid_edge_from_1, valid_weight_1 = edge_to_1[valid_edges_1], edge_from_1[valid_edges_1], weight_1[valid_edges_1]
-        valid_edge_to_2, valid_edge_from_2, valid_weight_2 = edge_to_2[valid_edges_2], edge_from_2[valid_edges_2], weight_2[valid_edges_2]
+        # # Filter the edges and weights based on validity
+        # valid_edge_to_1, valid_edge_from_1, valid_weight_1 = edge_to_1[valid_edges_1], edge_from_1[valid_edges_1], weight_1[valid_edges_1]
+        # valid_edge_to_2, valid_edge_from_2, valid_weight_2 = edge_to_2[valid_edges_2], edge_from_2[valid_edges_2], weight_2[valid_edges_2]
 
-        # Combine edges into a single array for easier processing
-        combined_edges_1 = np.vstack((valid_edge_to_1, valid_edge_from_1)).T
-        combined_edges_2 = np.vstack((valid_edge_to_2, valid_edge_from_2)).T
+        # # Combine edges into a single array for easier processing
+        # combined_edges_1 = np.vstack((valid_edge_to_1, valid_edge_from_1)).T
+        # combined_edges_2 = np.vstack((valid_edge_to_2, valid_edge_from_2)).T
 
-         # Use a dictionary for merging
-        merged_edges = {}
-        for edge, weight in zip(combined_edges_1, valid_weight_1):
-            edge_tuple = tuple(edge)
-            merged_edges[edge_tuple] = weight
-
-        for edge, weight in zip(combined_edges_2, valid_weight_2):
-            edge_tuple = tuple(edge)
-            if edge_tuple in merged_edges:
-                merged_edges[edge_tuple] = (1 - alpha) * merged_edges[edge_tuple] + alpha * weight
-            else:
-                merged_edges[edge_tuple] = weight
-
-        # Unpack the merged edges
-        merged_edge_to, merged_edge_from, merged_weight = zip(*[
-            (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
-        ])
-
-
-
+        #  # Use a dictionary for merging
         # merged_edges = {}
+        # for edge, weight in zip(combined_edges_1, valid_weight_1):
+        #     edge_tuple = tuple(edge)
+        #     merged_edges[edge_tuple] = weight
 
-        # for i in range(len(edge_to_1)):
-        #     if pred_edge_to_1[i] != pred_edge_from_1[i]:
-        #         continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
-        #     edge = (edge_to_1[i], edge_from_1[i])
-        #     merged_edges[edge] = weight_1[i]
-        # # merge the second edge and weight
-        # for i in range(len(edge_to_2)):
-        #     if pred_edge_to_2[i] != pred_edge_from_2[i]:
-        #         continue  # Skip this edge if predictions do not agree
-        #     edge = (edge_to_2[i], edge_from_2[i])
-        #     if edge in merged_edges:
-        #         # if we already have the edge strong connection
-        #         merged_edges[edge] = (1-alpha) * merged_edges[edge] + alpha * weight_2[i] 
+        # for edge, weight in zip(combined_edges_2, valid_weight_2):
+        #     edge_tuple = tuple(edge)
+        #     if edge_tuple in merged_edges:
+        #         merged_edges[edge_tuple] = (1 - alpha) * merged_edges[edge_tuple] + alpha * weight
         #     else:
-        #         # if we do not have the edge add it to 
-        #         merged_edges[edge] = weight_2[i]
+        #         merged_edges[edge_tuple] = weight
 
+        # # Unpack the merged edges
         # merged_edge_to, merged_edge_from, merged_weight = zip(*[
         #     (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
         # ])
+
+
+
+        merged_edges = {}
+
+        for i in range(len(edge_to_1)):
+            if pred_edge_to_1[i] != pred_edge_from_1[i]:
+                continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
+            edge = (edge_to_1[i], edge_from_1[i])
+            merged_edges[edge] = weight_1[i]
+        # merge the second edge and weight
+        for i in range(len(edge_to_2)):
+            if pred_edge_to_2[i] != pred_edge_from_2[i]:
+                continue  # Skip this edge if predictions do not agree
+            edge = (edge_to_2[i], edge_from_2[i])
+            if edge in merged_edges:
+                # if we already have the edge strong connection
+                merged_edges[edge] = (1-alpha) * merged_edges[edge] + alpha * weight_2[i] 
+            else:
+                # if we do not have the edge add it to 
+                merged_edges[edge] = weight_2[i]
+
+        merged_edge_to, merged_edge_from, merged_weight = zip(*[
+            (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+        ])
 
         return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
 

@@ -29,10 +29,7 @@ class GridGenerator:
         self.min_distance = min_distance
         self.n_neighbors = n_neighbors
     
-    def get_train_data(self,alpha=0.5):
-        train_data = self.data_provider.train_representation(self.epoch)
-        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
-        pred_res = self.data_provider.get_pred(self.epoch, train_data).argmax(axis=1)
+    def get_nearest_n_neighbors(self, train_data, n_neighbors,metric='euclidean'):
         n_trees = min(64, 5 + int(round((train_data.shape[0]) ** 0.5 / 20.0)))
         # max number of nearest neighbor iters to perform
         n_iters = max(5, int(round(np.log2(train_data.shape[0]))))
@@ -41,14 +38,25 @@ class GridGenerator:
         
         nnd = NNDescent(
             train_data,
-            n_neighbors=self.n_neighbors,
-            metric='euclidean',
+            n_neighbors=n_neighbors,
+            metric=metric,
             n_trees=n_trees,
             n_iters=n_iters,
             max_candidates=60,
             verbose=True
         )
         knn_indices, knn_dists = nnd.neighbor_graph
+
+        return knn_indices, knn_dists
+
+    
+    def get_train_data(self,alpha=0.5):
+        train_data = self.data_provider.train_representation(self.epoch)
+        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+        pred_res = self.data_provider.get_pred(self.epoch, train_data).argmax(axis=1)
+
+
+        knn_indices, knn_dists = self.get_nearest_n_neighbors(train_data, self.n_neighbors)
 
         diff_rate_list = []
         refine_train_data_indicates = []
@@ -95,6 +103,8 @@ class GridGenerator:
                     embedding_neg_to.append(k_n_indices[j])
    
         return embedding_neg_from, embedding_neg_to
+    
+        
 
 
     def gen_grids_near_to_training_data(self,alpha=0.5):
