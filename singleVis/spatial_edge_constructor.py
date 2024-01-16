@@ -28,6 +28,7 @@ from trustVis.data_generation import DataGeneration
 from sklearn.neighbors import KernelDensity
 from singleVis.utils import *
 from scipy.sparse import coo_matrix
+from trustVis.data_generation import DataGeneration
 
 seed_value = 0
 
@@ -201,20 +202,20 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         return border
     
 
-    def _construct_boundary_wise_complex(self, train_data, border_centers, metric="euclidean"):
+    def _construct_boundary_wise_complex(self, train_data, border_centers,n_neighbors=15, metric="euclidean"):
         """compute the boundary wise complex
             for each border point, we calculate its k nearest train points
             for each train data, we calculate its k nearest border points
         """
-        high_neigh = NearestNeighbors(n_neighbors=self.n_neighbors, radius=0.4)
+        high_neigh = NearestNeighbors(n_neighbors=n_neighbors, radius=0.4)
         high_neigh.fit(border_centers)
         fitting_data = np.concatenate((train_data, border_centers), axis=0)
-        knn_dists, knn_indices = high_neigh.kneighbors(train_data, n_neighbors=self.n_neighbors, return_distance=True)
+        knn_dists, knn_indices = high_neigh.kneighbors(train_data, n_neighbors=n_neighbors, return_distance=True)
         knn_indices = knn_indices + len(train_data)
 
-        high_bound_neigh = NearestNeighbors(n_neighbors=self.n_neighbors, radius=0.4)
+        high_bound_neigh = NearestNeighbors(n_neighbors=n_neighbors, radius=0.4)
         high_bound_neigh.fit(train_data)
-        bound_knn_dists, bound_knn_indices = high_bound_neigh.kneighbors(border_centers, n_neighbors=self.n_neighbors, return_distance=True)
+        bound_knn_dists, bound_knn_indices = high_bound_neigh.kneighbors(border_centers, n_neighbors=n_neighbors, return_distance=True)
         
         knn_dists = np.concatenate((knn_dists, bound_knn_dists), axis=0)
         knn_indices = np.concatenate((knn_indices, bound_knn_indices), axis=0)
@@ -223,7 +224,7 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         random_state = check_random_state(42)
         bw_complex, sigmas, rhos = fuzzy_simplicial_set(
             X=fitting_data,
-            n_neighbors=self.n_neighbors,
+            n_neighbors=n_neighbors,
             metric=metric,
             random_state=random_state,
             knn_indices=knn_indices,
@@ -239,8 +240,6 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         # Fit NearestNeighbors model on proxy
         high_neigh = NearestNeighbors(n_neighbors=self.n_neighbors, radius=0.4)
         high_neigh.fit(sample)
-        
-
         # Find k-nearest neighbors in sample for each point in proxy
         knn_dists, knn_indices = high_neigh.kneighbors(proxy, n_neighbors=self.n_neighbors, return_distance=True)
         knn_indices = knn_indices + len(proxy)
@@ -327,13 +326,8 @@ class SpatialEdgeConstructor(SpatialEdgeConstructorAbstractClass):
         ti[operation] = t
         with open(file_path, "w") as f:
             json.dump(ti, f)
-        
-'''
-Strategies:
-    Single: normal
-    Trustvis: consider prediction sementics
-    proxy: for the proxy based complex
-'''
+
+
 
 class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
     def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors,model) -> None:
@@ -354,22 +348,105 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
             ## str1
             bw_complex, _, _, _ = self._construct_boundary_wise_complex(train_data, border_centers)
 
-            edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, bw_complex)
+            edge_to, edge_from, probs = self._construct_step_edge_dataset(complex, bw_complex)
             feature_vectors = np.concatenate((train_data, border_centers ), axis=0)
             pred_model = self.data_provider.prediction_function(self.iteration)
             attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
             # attention = np.zeros(feature_vectors.shape)
         elif self.b_n_epochs == 0:
-            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
-            edge_to, edge_from, weight = self._construct_step_edge_dataset(complex, None)
             feature_vectors = np.copy(train_data)
+            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+            edge_to, edge_from, probs = self._construct_step_edge_dataset(complex, None)
             pred_model = self.data_provider.prediction_function(self.iteration)
             attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
             # attention = np.zeros(feature_vectors.shape)
         else: 
             raise Exception("Illegal border edges proposion!")
             
-        return edge_to, edge_from, weight, feature_vectors, attention
+        return edge_to, edge_from, probs, feature_vectors, attention
+    def record_time(self, save_dir, file_name, operation, t):
+        file_path = os.path.join(save_dir, file_name+".json")
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                ti = json.load(f)
+        else:
+            ti = dict()
+        if operation not in ti.keys():
+            ti[operation] = dict()
+        ti[operation][str(self.iteration)] = t
+        with open(file_path, "w") as f:
+            json.dump(ti, f)
+
+
+'''
+Strategies:
+    Single: normal
+    Trustvis: consider prediction sementics
+    proxy: for the proxy based complex
+'''
+
+class Trustvis_SpatialEdgeConstructor(SpatialEdgeConstructor):
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors,model) -> None:
+        super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
+        self.iteration = iteration
+        self.model = model
+    
+    def construct(self):
+        """"
+            baseline complex constructor
+        """
+        train_data = self.data_provider.train_representation(self.iteration)
+        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+        if self.b_n_epochs > 0:
+            border_centers = self.data_provider.border_representation(self.iteration).squeeze()
+            
+            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+            ## str1
+            bw_complex, _, _, _ = self._construct_boundary_wise_complex(train_data, border_centers)
+
+            edge_to, edge_from, probs = self._construct_step_edge_dataset(complex, bw_complex)
+            feature_vectors = np.concatenate((train_data, border_centers ), axis=0)
+            pred_model = self.data_provider.prediction_function(self.iteration)
+            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
+            # attention = np.zeros(feature_vectors.shape)
+            pred_probs = probs
+        elif self.b_n_epochs == 0:
+            feature_vectors = np.copy(train_data)
+            feature_vectors_pred = self.data_provider.get_pred(self.iteration, feature_vectors)
+            complex, sigmas, rhos, _ = self._construct_fuzzy_complex(train_data)
+            edge_to, edge_from, probs = self._construct_step_edge_dataset(complex, None)
+
+            probs = probs / (probs.max()+1e-3)
+            eliminate_zeros = probs > 1e-3    #1e-3
+            edge_to = edge_to[eliminate_zeros]
+            edge_from = edge_from[eliminate_zeros]
+            probs = probs[eliminate_zeros]
+
+            edge_to_pred = feature_vectors_pred[edge_to]
+            edge_from_pred = feature_vectors_pred[edge_from]
+          
+            pred_similarity = np.einsum('ij,ij->i', edge_to_pred, edge_from_pred) / (
+                np.linalg.norm(edge_to_pred, axis=1) * np.linalg.norm(edge_from_pred, axis=1)
+                )
+
+
+            # # print("pred_similarity",pred_similarity)
+            # # weight_pred = np.exp(pred_similarity/sigmas[edge_to])
+            # # print("weight_pred",weight_pred)
+            # # print("weight",weight)
+
+            # # weight = weight * pred_similarity
+            pred_probs= np.where(probs == 1, 1, probs + (1 - probs) * pred_similarity ** 2)
+
+            # weight = np.where(weight == 1, 1, np.where(weight <= 1e-3, weight, weight + (1 - weight) * pred_similarity ** 2))
+  
+            pred_model = self.data_provider.prediction_function(self.iteration)
+            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
+            # attention = np.zeros(feature_vectors.shape)
+        else: 
+            raise Exception("Illegal border edges proposion!")
+            
+        return edge_to, edge_from, probs, pred_probs, feature_vectors, attention
     def record_time(self, save_dir, file_name, operation, t):
         file_path = os.path.join(save_dir, file_name+".json")
         if os.path.exists(file_path):
@@ -385,12 +462,139 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
 
 
 
+# class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
+#     def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, train_data=None, gen_border_data = np.array([])) -> None:
+#         super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
+#         self.iteration = iteration
+#         self.train_data = train_data
+#         self.gen_border_data = gen_border_data
+#         # self.cluster_labels = cluster_labels
+    
+#     def construct(self):
+
+#         """
+#         Class: Complex Constructor with Prediction Semantics
+    
+#             This function constructs a complex by integrating train data with prediction semantics.
+#             Step 1: Construct the Initial Complex
+#                 - This step involves building a complex based on the audience distance between representations, using the training data. 
+#                 This initial complex forms the foundational structure.
+#             Step 2: Get Graph Elements
+#                 - This step involves transforming the complex into a graph.
+#                 - Edges that do not intersect any boundary are classified and stored in the standard edge set.
+#                 - Edges that intersect boundaries are stored in a separate set, known as the boundary edge set.
+#                   These edges are crucial for applying margin loss during the training process.
+#             Step 3: Boundary Sample Generation and Integration
+#                 - In this step, boundary samples are generated from edges that cross boundaries.
+#                 - These samples are then added to the graph to enhance the boundary sensitivity.
+
+#         """
+#         if  self.train_data !=None and len(self.train_data) > 0:
+#             train_data = self.train_data
+#             print("train data:", train_data.shape)
+#         else:
+#             train_data = self.data_provider.train_representation(self.iteration)
+#             train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+#         # step 1 build spital complex
+#         complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+   
+
+#         if len(self.gen_border_data) > 0 :
+#             print("with border")
+#             # step 2 get non_boundary edge and boundary edge
+#             edge_to, edge_from, weight,b_edge_to, b_edge_from, b_weight = self.get_graph_ele(complex,train_data)
+
+#             # step 3 add border samples
+#             al_data = np.concatenate((train_data, self.gen_border_data), axis=0)
+#             complex_border, _, _, _ = self._construct_boundary_wise_complex(train_data, self.gen_border_data)
+#             border_edge_to, border_edge_from, border_weight = self.merge_complex(complex_border, al_data)
+
+#             border_weight *= 0.1
+#             edge_to = np.concatenate((border_edge_to, edge_to), axis=0)
+#             edge_from = np.concatenate((border_edge_from, edge_from), axis=0)
+#             weight = np.concatenate((border_weight, weight), axis=0)
+#             print("gen_border_data:", self.gen_border_data.shape)
+#             feature_vectors = al_data
+#         else:
+#             print("without border")
+#             feature_vectors = train_data
+#             # step 3
+#             edge_to, edge_from, weight, b_edge_to, b_edge_from, b_weight = self.merge_complexes(complex, feature_vectors)  
+        
+#         pred_model = self.data_provider.prediction_function(self.iteration)
+#         attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)                        
+#         return edge_to, edge_from, weight, feature_vectors, attention, b_edge_to, b_edge_from, b_weight
+
+#     def get_graph_ele(self, complex1, train_data):
+#         edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
+       
+#         train_data_pred_ = self.data_provider.get_pred(self.iteration, train_data)
+#         train_data_pred =  train_data_pred_.argmax(axis=1)
+        
+
+#         pred_edge_to_1 = train_data_pred[edge_to_1]
+#         pred_edge_from_1 = train_data_pred[edge_from_1]
+
+
+#         merged_edges = {}
+#         merged_boundary_edges = {}
+
+
+#         for i in range(len(edge_to_1)):
+#             edge = (edge_to_1[i], edge_from_1[i])
+#             if pred_edge_to_1[i] != pred_edge_from_1[i]:
+#                 merged_boundary_edges[edge] = weight_1[i]
+#             else:
+#                 merged_edges[edge] = weight_1[i]
+
+#         merged_edge_to, merged_edge_from, merged_weight = zip(*[
+#             (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+#         ])
+#         merged_boundary_edge_to, merged_boundary_edge_from, merged_boundary_weight = zip(*[
+#         (edge[0], edge[1], wgt) for edge, wgt in merged_boundary_edges.items()])
+
+#         return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight),np.array(merged_boundary_edge_to), np.array(merged_boundary_edge_from), np.array(merged_boundary_weight)
+#     ### for border
+#     def merge_complex(self, complex1,train_data):
+#         edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
+
+#         train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
+
+#         pred_edge_to_1 = train_data_pred[edge_to_1]
+#         pred_edge_from_1 = train_data_pred[edge_from_1]
+
+#         merged_edges = {}
+
+#         for i in range(len(edge_to_1)):
+#             if pred_edge_to_1[i] != pred_edge_from_1[i]:
+#                 continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
+#             edge = (edge_to_1[i], edge_from_1[i])
+#             merged_edges[edge] = weight_1[i]
+
+#         merged_edge_to, merged_edge_from, merged_weight = zip(*[
+#             (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+#         ])
+
+#         return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
+    
+#     def record_time(self, save_dir, file_name, operation, t):
+#         file_path = os.path.join(save_dir, file_name+".json")
+#         if os.path.exists(file_path):
+#             with open(file_path, "r") as f:
+#                 ti = json.load(f)
+#         else:
+#             ti = dict()
+#         if operation not in ti.keys():
+#             ti[operation] = dict()
+#         ti[operation][str(self.iteration)] = t
+#         with open(file_path, "w") as f:
+#             json.dump(ti, f)
 class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
-    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, alpha=0.7, train_data=None) -> None:
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, train_data=None, gen_border_data = np.array([])) -> None:
         super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
         self.iteration = iteration
         self.train_data = train_data
-        self.alpha = alpha
+        self.gen_border_data = gen_border_data
     
     def construct(self):
 
@@ -401,15 +605,14 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
             Step 1: Construct the Initial Complex
                 - This step involves building a complex based on the audience distance between representations, using the training data. 
                 This initial complex forms the foundational structure.
-            Step 2: Build a Prediction Semantics based Complex
-                - In this step, a predictive complex is created. This complex considers the cosine distance between g(x1) and g(x2), 
-                where g(.) represents the prediction function. This step adds a layer of predictive insight to the complex.
-            Step 3: Merge the complexes
-                - This final step involves merging the initial complex from Step 1 with the predictive complex from Step 2:
-                a. Edges in the initial complex whose neighboring representations have completely different predictive semantics are removed. 
-                This step ensures that the merged complex accurately reflects both the foundational structure and the predictive relationships.
-                b. New edges from the predictive complex are added to the initial complex.
-                c. For edges that are common to both complexes, their weights are combined, enhancing the existing connections with predictive insights.
+            Step 2: Get Graph Elements
+                - This step involves transforming the complex into a graph.
+                - Edges that do not intersect any boundary are classified and stored in the standard edge set.
+                - Edges that intersect boundaries are stored in a separate set, known as the boundary edge set.
+                  These edges are crucial for applying margin loss during the training process.
+            Step 3: Boundary Sample Generation and Integration
+                - In this step, boundary samples are generated from edges that cross boundaries.
+                - These samples are then added to the graph to enhance the boundary sensitivity.
 
         """
         if  self.train_data !=None and len(self.train_data) > 0:
@@ -418,30 +621,70 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
         else:
             train_data = self.data_provider.train_representation(self.iteration)
             train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
-        
-        # step 1
+        # step 1 build spital complex
         complex, _, _, _ = self._construct_fuzzy_complex(train_data)
-        # step 2
-        complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
-        # step 3
-        edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data,self.alpha)  
-        feature_vectors = train_data
-        pred_model = self.data_provider.prediction_function(self.iteration)
-        attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
-        # attention = np.zeros(feature_vectors.shape)
-            
-        return edge_to, edge_from, weight, feature_vectors, attention
+   
 
-    def merge_complexes(self, complex1, complex2,train_data,alpha=0.7):
+        if len(self.gen_border_data) > 0 :
+            print("with border")
+            # step 2 get non_boundary edge and boundary edge
+            edge_to, edge_from, weight,b_edge_to, b_edge_from, b_weight = self.get_graph_ele(complex,train_data)
+
+            # step 3 add border samples
+            al_data = np.concatenate((train_data, self.gen_border_data), axis=0)
+            complex_border, _, _, _ = self._construct_boundary_wise_complex(train_data, self.gen_border_data)
+            border_edge_to, border_edge_from, border_weight = self.merge_complex(complex_border, al_data)
+
+            border_weight *= 0.1
+            edge_to = np.concatenate((border_edge_to, edge_to), axis=0)
+            edge_from = np.concatenate((border_edge_from, edge_from), axis=0)
+            weight = np.concatenate((border_weight, weight), axis=0)
+            print("gen_border_data:", self.gen_border_data.shape)
+            feature_vectors = al_data
+        else:
+            print("without border")
+            feature_vectors = train_data
+            # step 3
+            edge_to, edge_from, weight, b_edge_to, b_edge_from, b_weight = self.merge_complexes(complex, complex_pred, None, feature_vectors,self.alpha)  
+        
+        pred_model = self.data_provider.prediction_function(self.iteration)
+        attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)                        
+        return edge_to, edge_from, weight, feature_vectors, attention, b_edge_to, b_edge_from, b_weight
+
+    def get_graph_ele(self, complex1, train_data):
         edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
-        edge_to_2, edge_from_2, weight_2 = self._construct_step_edge_dataset(complex2, None)
+       
+        train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
+
+        pred_edge_to_1 = train_data_pred[edge_to_1]
+        pred_edge_from_1 = train_data_pred[edge_from_1]
+
+
+        merged_edges = {}
+        merged_boundary_edges = {}
+
+        for i in range(len(edge_to_1)):
+            edge = (edge_to_1[i], edge_from_1[i])
+            if pred_edge_to_1[i] != pred_edge_from_1[i]:
+                merged_boundary_edges[edge] = weight_1[i]
+            else:
+                merged_edges[edge] = weight_1[i]
+
+        merged_edge_to, merged_edge_from, merged_weight = zip(*[
+            (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+        ])
+        merged_boundary_edge_to, merged_boundary_edge_from, merged_boundary_weight = zip(*[
+        (edge[0], edge[1], wgt) for edge, wgt in merged_boundary_edges.items()])
+
+        return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight),np.array(merged_boundary_edge_to), np.array(merged_boundary_edge_from), np.array(merged_boundary_weight)
+    ### for border
+    def merge_complex(self, complex1,train_data):
+        edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
 
         train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
 
         pred_edge_to_1 = train_data_pred[edge_to_1]
         pred_edge_from_1 = train_data_pred[edge_from_1]
-        pred_edge_to_2 = train_data_pred[edge_to_2]
-        pred_edge_from_2 = train_data_pred[edge_from_2]
 
         merged_edges = {}
 
@@ -450,24 +693,13 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
                 continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
             edge = (edge_to_1[i], edge_from_1[i])
             merged_edges[edge] = weight_1[i]
-        # merge the second edge and weight
-        for i in range(len(edge_to_2)):
-            if pred_edge_to_2[i] != pred_edge_from_2[i]:
-                continue  # Skip this edge if predictions do not agree
-            edge = (edge_to_2[i], edge_from_2[i])
-            if edge in merged_edges:
-                # if we already have the edge strong connection
-                merged_edges[edge] = (1-alpha) * merged_edges[edge] + alpha * weight_2[i] 
-            else:
-                # if we do not have the edge add it to 
-                merged_edges[edge] = weight_2[i]
 
         merged_edge_to, merged_edge_from, merged_weight = zip(*[
             (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
         ])
 
         return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
-
+    
     def record_time(self, save_dir, file_name, operation, t):
         file_path = os.path.join(save_dir, file_name+".json")
         if os.path.exists(file_path):
@@ -481,104 +713,122 @@ class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
         with open(file_path, "w") as f:
             json.dump(ti, f)
 
-# TODO active learning
-class TrustALSpatialEdgeConstructor(SpatialEdgeConstructor):
-    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, train_data,alpha=0.7 ) -> None:
+class TrustvisProxyEdgeConstructor(SpatialEdgeConstructor):
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, cluster_labels, train_data=None, gen_border_data = np.array([])) -> None:
         super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
         self.iteration = iteration
         self.train_data = train_data
-        self.alpha = alpha
+        self.cluster_labels = cluster_labels
+        self.gen_border_data = gen_border_data
     
     def construct(self):
 
         """
-        Class: Complex Constructor use in active learning
+        Class: Complex Constructor with Prediction Semantics
+    
+            This function constructs a complex by integrating train data with prediction semantics.
+            Step 1: Construct the Initial Complex
+                - This step involves building a complex based on the audience distance between representations, using the training data. 
+                This initial complex forms the foundational structure.
+            Step 2: Get Graph Elements
+                - This step involves transforming the complex into a graph.
+                - Edges that do not intersect any boundary are classified and stored in the standard edge set.
+                - Edges that intersect boundaries are stored in a separate set, known as the boundary edge set.
+                  These edges are crucial for applying margin loss during the training process.
+            Step 3: Boundary Sample Generation and Integration
+                - In this step, boundary samples are generated from edges that cross boundaries.
+                - These samples are then added to the graph to enhance the boundary sensitivity.
 
         """
-        train_data = self.train_data
-
-        print("shape of trian data", train_data.shape)
+        if  self.train_data !=None and len(self.train_data) > 0:
+            train_data = self.train_data
+            print("train data:", train_data.shape)
+        else:
+            train_data = self.data_provider.train_representation(self.iteration)
+            train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+        # step 1 build spital complex
         complex, _, _, _ = self._construct_fuzzy_complex(train_data)
-        complex_pred, _, _, _ = self._construct_fuzzy_complex_pred_Diff(train_data,self.iteration)
-        # step 3
-        edge_to, edge_from, weight = self.merge_complexes(complex, complex_pred,train_data,self.alpha)  
-        # step 3
-       
-        feature_vectors = train_data
-        pred_model = self.data_provider.prediction_function(self.iteration)
-        attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
-        # attention = np.zeros(feature_vectors.shape)
-            
-        return edge_to, edge_from, weight, feature_vectors, attention
+   
 
-    def merge_complexes(self, complex1, complex2,train_data,alpha=0.7):
+        if len(self.gen_border_data) > 0 :
+            print("with border")
+            # step 2 get non_boundary edge and boundary edge
+            edge_to, edge_from, weight,b_edge_to, b_edge_from, b_weight = self.get_graph_ele(complex,train_data)
+
+            # step 3 add border samples
+            al_data = np.concatenate((train_data, self.gen_border_data), axis=0)
+            complex_border, _, _, _ = self._construct_boundary_wise_complex(train_data, self.gen_border_data)
+            border_edge_to, border_edge_from, border_weight = self.merge_complex(complex_border, al_data)
+
+            border_weight *= 0.05
+            edge_to = np.concatenate((border_edge_to, edge_to), axis=0)
+            edge_from = np.concatenate((border_edge_from, edge_from), axis=0)
+            weight = np.concatenate((border_weight, weight), axis=0)
+            print("gen_border_data:", self.gen_border_data.shape)
+            feature_vectors = al_data
+        else:
+            print("without border")
+            feature_vectors = train_data
+            # step 3
+            edge_to, edge_from, weight, b_edge_to, b_edge_from, b_weight = self.merge_complexes(complex, feature_vectors)  
+        
+        pred_model = self.data_provider.prediction_function(self.iteration)
+        attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)                        
+        return edge_to, edge_from, weight, feature_vectors, attention, b_edge_to, b_edge_from, b_weight
+
+    def get_graph_ele(self, complex1, train_data):
         edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
-        edge_to_2, edge_from_2, weight_2 = self._construct_step_edge_dataset(complex2, None)
+       
+        train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
+
+        pred_edge_to_1 = train_data_pred[edge_to_1]
+        pred_edge_from_1 = train_data_pred[edge_from_1]
+
+
+        merged_edges = {}
+        merged_boundary_edges = {}
+
+        for i in range(len(edge_to_1)):
+            edge = (edge_to_1[i], edge_from_1[i])
+            if pred_edge_to_1[i] != pred_edge_from_1[i]:
+                merged_boundary_edges[edge] = weight_1[i]
+#             elif self.cluster_labels[edge_to_1[i]] != self.cluster_labels[edge_from_1[i]]:
+# #                 # merged_inner_boundary_edges[edge] = weight_1[i]
+#                 merged_edges[edge] = weight_1[i] * 0.9
+            else:
+                merged_edges[edge] = weight_1[i]
+
+        merged_edge_to, merged_edge_from, merged_weight = zip(*[
+            (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+        ])
+        merged_boundary_edge_to, merged_boundary_edge_from, merged_boundary_weight = zip(*[
+        (edge[0], edge[1], wgt) for edge, wgt in merged_boundary_edges.items()])
+
+        return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight),np.array(merged_boundary_edge_to), np.array(merged_boundary_edge_from), np.array(merged_boundary_weight)
+    ### for border
+    def merge_complex(self, complex1,train_data):
+        edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
 
         train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
 
         pred_edge_to_1 = train_data_pred[edge_to_1]
         pred_edge_from_1 = train_data_pred[edge_from_1]
-        pred_edge_to_2 = train_data_pred[edge_to_2]
-        pred_edge_from_2 = train_data_pred[edge_from_2]
-
-        # # Vectorized equality check
-        # valid_edges_1 = pred_edge_to_1 == pred_edge_from_1
-        # valid_edges_2 = pred_edge_to_2 == pred_edge_from_2
-
-        # # Filter the edges and weights based on validity
-        # valid_edge_to_1, valid_edge_from_1, valid_weight_1 = edge_to_1[valid_edges_1], edge_from_1[valid_edges_1], weight_1[valid_edges_1]
-        # valid_edge_to_2, valid_edge_from_2, valid_weight_2 = edge_to_2[valid_edges_2], edge_from_2[valid_edges_2], weight_2[valid_edges_2]
-
-        # # Combine edges into a single array for easier processing
-        # combined_edges_1 = np.vstack((valid_edge_to_1, valid_edge_from_1)).T
-        # combined_edges_2 = np.vstack((valid_edge_to_2, valid_edge_from_2)).T
-
-        #  # Use a dictionary for merging
-        # merged_edges = {}
-        # for edge, weight in zip(combined_edges_1, valid_weight_1):
-        #     edge_tuple = tuple(edge)
-        #     merged_edges[edge_tuple] = weight
-
-        # for edge, weight in zip(combined_edges_2, valid_weight_2):
-        #     edge_tuple = tuple(edge)
-        #     if edge_tuple in merged_edges:
-        #         merged_edges[edge_tuple] = (1 - alpha) * merged_edges[edge_tuple] + alpha * weight
-        #     else:
-        #         merged_edges[edge_tuple] = weight
-
-        # # Unpack the merged edges
-        # merged_edge_to, merged_edge_from, merged_weight = zip(*[
-        #     (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
-        # ])
-
-
 
         merged_edges = {}
 
         for i in range(len(edge_to_1)):
             if pred_edge_to_1[i] != pred_edge_from_1[i]:
                 continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
+            
             edge = (edge_to_1[i], edge_from_1[i])
             merged_edges[edge] = weight_1[i]
-        # merge the second edge and weight
-        for i in range(len(edge_to_2)):
-            if pred_edge_to_2[i] != pred_edge_from_2[i]:
-                continue  # Skip this edge if predictions do not agree
-            edge = (edge_to_2[i], edge_from_2[i])
-            if edge in merged_edges:
-                # if we already have the edge strong connection
-                merged_edges[edge] = (1-alpha) * merged_edges[edge] + alpha * weight_2[i] 
-            else:
-                # if we do not have the edge add it to 
-                merged_edges[edge] = weight_2[i]
 
         merged_edge_to, merged_edge_from, merged_weight = zip(*[
             (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
         ])
 
         return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
-
+    
     def record_time(self, save_dir, file_name, operation, t):
         file_path = os.path.join(save_dir, file_name+".json")
         if os.path.exists(file_path):
@@ -591,85 +841,171 @@ class TrustALSpatialEdgeConstructor(SpatialEdgeConstructor):
         ti[operation][str(self.iteration)] = t
         with open(file_path, "w") as f:
             json.dump(ti, f)
+
+
+
 
 """ proxy based edge complex construction"""
-class TrustvisProxyEdgeConstructor(SpatialEdgeConstructor):
-    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, proxy) -> None:
-        super().__init__(data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors)
-        self.iteration = iteration
-        self.proxy = proxy
+# class TrustvisProxyEdgeConstructor(SpatialEdgeConstructor):
+#     def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, proxy,cluster_labels,gen_border_data) -> None:
+#         super().__init__(data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors)
+#         self.iteration = iteration
+#         self.proxy = proxy
+#         self.cluster_labels = cluster_labels
+#         self.gen_border_data = gen_border_data
     
-    def construct(self):
-        train_data = self.data_provider.train_representation(self.iteration)
-        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
-        # step 1
-        # build proxy-proxy-connection
-        proxy_proxy_connection,_, _, _  = self._construct_fuzzy_complex(self.proxy)
-        proxy_proxy_pred_connection, _, _, _ = self._construct_fuzzy_complex_pred_Diff(self.proxy, self.iteration)
-        p_edge_to, p_edge_from, p_weight = self.merge_complexes(proxy_proxy_connection, proxy_proxy_pred_connection,self.proxy) 
-        # build proxy-sample-connection
+#     def construct(self):
+#         train_data = self.data_provider.train_representation(self.iteration)
+#         train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+#         # step 1
+#         # build proxy-proxy-connection
         
-        proxy_sample_connection, _, _, _ = self._construct_boundary_wise_complex(self.proxy, train_data)
-        #TODO select strategy
-        proxy_sample_connection, _, _, _ = self._construct_proxy_wise_complex(self.proxy, train_data)
-        proxy_sample_pred_complex, _, _, _ = self._construct_pred_wise_complex(self.proxy, train_data, self.iteration)
+     
+#         # build proxy-sample-connection
+#         #TODO select strategy
+#         # proxy_sample_connection, _, _, _ = self._construct_proxy_wise_complex(self.proxy, train_data)
+#         # ps_edge_to, ps_edge_from, ps_weight, ps_bon_edge_to, ps_bon_edge_from, ps_bon_weight,_,_,_ = self.get_graph_ele(proxy_sample_connection, np.concatenate((self.proxy, train_data),axis=0)) 
 
-        edge_to, edge_from, weight = self.merge_complexes(proxy_sample_connection, proxy_sample_pred_complex, np.concatenate((self.proxy, train_data),axis=0)) 
+#         # build sample-sample-connection
+#         sample_sample_connetction, _, _,_ = self._construct_fuzzy_complex(train_data)
+#         edge_to, edge_from, weight, bon_edge_to, bon_edge_from, bon_weight,inner_from,inner_to, inner_weight= self.get_graph_ele(sample_sample_connetction, train_data,True) 
+#         edge_to = edge_to 
+#         edge_from = edge_from
 
-        edge_to = np.concatenate((p_edge_to, edge_to), axis=0)
-        edge_from = np.concatenate((p_edge_from, edge_from), axis=0)
-        weight = np.concatenate((p_weight, weight), axis=0)
+#         complex_border, _, _, _ = self._construct_boundary_wise_complex(train_data, self.gen_border_data)
+#         al_data = np.concatenate((train_data, self.gen_border_data), axis=0)
+#         border_edge_to, border_edge_from, border_weight = self.merge_complex(complex_border, al_data)
+#         border_weight *= 0.1
+#         border_edge_to = border_edge_to 
+#         border_edge_from = border_edge_from 
 
-        feature_vectors = np.concatenate((self.proxy, train_data ), axis=0)
-        pred_model = self.data_provider.prediction_function(self.iteration)
-        attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
-        # attention = np.zeros(feature_vectors.shape)
+
+#         # edge_to = np.concatenate((p_edge_to, ps_edge_to, edge_to), axis=0)
+#         # edge_from = np.concatenate((p_edge_from,ps_edge_from, edge_from), axis=0)
+#         # weight = np.concatenate((p_weight, ps_weight, weight), axis=0)
+#         edge_to = np.concatenate(( edge_to,border_edge_to), axis=0)
+#         edge_from = np.concatenate((edge_from,border_edge_from), axis=0)
+#         weight = np.concatenate((weight,border_weight), axis=0)
+
+#         ###### for boundary crossing edge
+#         # bon_edge_to = np.concatenate((p_bon_edge_to, ps_bon_edge_to,bon_edge_to), axis=0)
+#         # bon_edge_from = np.concatenate((p_bon_edge_from, ps_bon_edge_from, bon_edge_from),axis=0)
+#         # bon_weight = np.concatenate((p_bon_weight,ps_bon_weight, bon_weight),axis=0)
+
+
+
+#         feature_vectors = np.concatenate((train_data,self.gen_border_data ), axis=0)
+#         pred_model = self.data_provider.prediction_function(self.iteration)
+#         attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
+#         # attention = np.zeros(feature_vectors.shape)
             
-        return edge_to, edge_from, weight, feature_vectors, attention
+#         return edge_to, edge_from, weight, feature_vectors, attention, bon_edge_to, bon_edge_from, bon_weight, inner_to, inner_from, inner_weight
+#     ### for border
+#     def merge_complex(self, complex1,train_data):
+#         edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
 
-    def merge_complexes(self, complex1, complex2, train_data,alpha=0.7):
+#         train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
+
+#         pred_edge_to_1 = train_data_pred[edge_to_1]
+#         pred_edge_from_1 = train_data_pred[edge_from_1]
+
+#         merged_edges = {}
+
+#         for i in range(len(edge_to_1)):
+#             if pred_edge_to_1[i] != pred_edge_from_1[i]:
+#                 continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
+#             edge = (edge_to_1[i], edge_from_1[i])
+#             merged_edges[edge] = weight_1[i]
+
+#         merged_edge_to, merged_edge_from, merged_weight = zip(*[
+#             (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+#         ])
+
+#         return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
+    
+#     def merge_complexes(self, complex1, complex2, train_data,alpha=0.7):
         
-        edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
-        edge_to_2, edge_from_2, weight_2 = self._construct_step_edge_dataset(complex2, None)
+#         edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
+#         edge_to_2, edge_from_2, weight_2 = self._construct_step_edge_dataset(complex2, None)
 
-        pred_edge_to_1 = self.data_provider.get_pred(self.iteration, train_data[edge_to_1]).argmax(axis=1)
-        pred_edge_from_1 = self.data_provider.get_pred(self.iteration, train_data[edge_from_1]).argmax(axis=1)
+#         pred_edge_to_1 = self.data_provider.get_pred(self.iteration, train_data[edge_to_1]).argmax(axis=1)
+#         pred_edge_from_1 = self.data_provider.get_pred(self.iteration, train_data[edge_from_1]).argmax(axis=1)
 
-        merged_edges = {}
+#         merged_edges = {}
 
-        for i in range(len(edge_to_1)):
-            if pred_edge_to_1[i] != pred_edge_from_1[i]:
-                continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
-            edge = (edge_to_1[i], edge_from_1[i])
-            merged_edges[edge] = weight_1[i]
-        # merge the second edge and weight
-        for i in range(len(edge_to_2)):
-            edge = (edge_to_2[i], edge_from_2[i])
-            if edge in merged_edges:
-                # if we already have the edge strong connection
-                merged_edges[edge] = (1-alpha) * merged_edges[edge] + alpha * weight_2[i] 
-            else:
-                # if we do not have the edge add it to 
-                merged_edges[edge] = weight_2[i]
+#         for i in range(len(edge_to_1)):
+#             if pred_edge_to_1[i] != pred_edge_from_1[i]:
+#                 continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
+#             edge = (edge_to_1[i], edge_from_1[i])
+#             merged_edges[edge] = weight_1[i]
+#         # merge the second edge and weight
+#         for i in range(len(edge_to_2)):
+#             edge = (edge_to_2[i], edge_from_2[i])
+#             if edge in merged_edges:
+#                 # if we already have the edge strong connection
+#                 merged_edges[edge] = (1-alpha) * merged_edges[edge] + alpha * weight_2[i] 
+#             else:
+#                 # if we do not have the edge add it to 
+#                 merged_edges[edge] = weight_2[i]
 
-        merged_edge_to, merged_edge_from, merged_weight = zip(*[
-            (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
-        ])
+#         merged_edge_to, merged_edge_from, merged_weight = zip(*[
+#             (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+#         ])
 
-        return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
+#         return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
+    
+#     def get_graph_ele(self, complex1, train_data,need_inner=False):
+#         edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
+       
+#         train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
 
-    def record_time(self, save_dir, file_name, operation, t):
-        file_path = os.path.join(save_dir, file_name+".json")
-        if os.path.exists(file_path):
-            with open(file_path, "r") as f:
-                ti = json.load(f)
-        else:
-            ti = dict()
-        if operation not in ti.keys():
-            ti[operation] = dict()
-        ti[operation][str(self.iteration)] = t
-        with open(file_path, "w") as f:
-            json.dump(ti, f)
+#         pred_edge_to_1 = train_data_pred[edge_to_1]
+#         pred_edge_from_1 = train_data_pred[edge_from_1]
+
+
+#         merged_edges = {}
+#         merged_boundary_edges = {}
+#         merged_inner_boundary_edges = {}
+
+#         for i in range(len(edge_to_1)):
+#             edge = (edge_to_1[i], edge_from_1[i])
+#             if pred_edge_to_1[i] != pred_edge_from_1[i]:
+#                 merged_boundary_edges[edge] = weight_1[i]
+#             elif need_inner and self.cluster_labels[edge_to_1[i]] != self.cluster_labels[edge_from_1[i]]:
+#                 # merged_inner_boundary_edges[edge] = weight_1[i]
+#                 merged_edges[edge] = weight_1[i]
+#             else:
+#                 merged_edges[edge] = weight_1[i]
+
+#         merged_edge_to, merged_edge_from, merged_weight = zip(*[
+#             (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+#         ])
+#         if need_inner and merged_inner_boundary_edges != {}:
+#             merged_inner_boundary_edge_to, merged_inner_boundary_edge_from, merged_inner_boundary_weight = zip(*[
+#             (edge[0], edge[1], wgt) for edge, wgt in merged_inner_boundary_edges.items()])
+#         else:
+#             merged_inner_boundary_edge_to = np.array([])
+#             merged_inner_boundary_edge_from = np.array([])
+#             merged_inner_boundary_weight = np.array([])
+
+      
+#         merged_boundary_edge_to, merged_boundary_edge_from, merged_boundary_weight = zip(*[
+#         (edge[0], edge[1], wgt) for edge, wgt in merged_boundary_edges.items()])
+
+#         return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight),np.array(merged_boundary_edge_to), np.array(merged_boundary_edge_from), np.array(merged_boundary_weight),np.array(merged_inner_boundary_edge_to), np.array(merged_inner_boundary_edge_from), np.array(merged_inner_boundary_weight)
+
+#     def record_time(self, save_dir, file_name, operation, t):
+#         file_path = os.path.join(save_dir, file_name+".json")
+#         if os.path.exists(file_path):
+#             with open(file_path, "r") as f:
+#                 ti = json.load(f)
+#         else:
+#             ti = dict()
+#         if operation not in ti.keys():
+#             ti[operation] = dict()
+#         ti[operation][str(self.iteration)] = t
+#         with open(file_path, "w") as f:
+#             json.dump(ti, f)
 
         
 

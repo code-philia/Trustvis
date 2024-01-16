@@ -2,6 +2,8 @@
 #                                                          IMPORT                                                      #
 ########################################################################################################################
 import torch
+from torch import nn
+
 import sys
 sys.path.append('..')
 import os
@@ -16,19 +18,18 @@ from umap.umap_ import find_ab_params
 
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss
+from singleVis.losses import ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss
+from singleVis.backend import convert_distance_to_probability, compute_cross_entropy
 from singleVis.edge_dataset import DVIDataHandler
 from singleVis.trainer import DVITrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
-# from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
-from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
-from singleVis.spatial_edge_constructor import TrustvisProxyEdgeConstructor
+from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
+# from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
 
 from singleVis.projector import DVIProjector
 from singleVis.utils import find_neighbor_preserving_rate
 
-from trustVis.skeleton_generator import CenterSkeletonGenerator
 ########################################################################################################################
 #                                                     DVI PARAMETERS                                                   #
 ########################################################################################################################
@@ -76,7 +77,6 @@ CLASSES = config["CLASSES"]
 DATASET = config["DATASET"]
 PREPROCESS = config["VISUALIZATION"]["PREPROCESS"]
 GPU_ID = config["GPU"]
-GPU_ID = 0
 EPOCH_START = config["EPOCH_START"]
 EPOCH_END = config["EPOCH_END"]
 EPOCH_PERIOD = config["EPOCH_PERIOD"]
@@ -92,10 +92,9 @@ LEN = TRAINING_PARAMETER["train_num"]
 
 # Training parameter (visualization model)
 VISUALIZATION_PARAMETER = config["VISUALIZATION"]
-LAMBDA1 = VISUALIZATION_PARAMETER["LAMBDA1"]
-LAMBDA1 = 2
+LAMBDA1 = 1
 LAMBDA2 = VISUALIZATION_PARAMETER["LAMBDA2"]
-B_N_EPOCHS = VISUALIZATION_PARAMETER["BOUNDARY"]["B_N_EPOCHS"]
+B_N_EPOCHS = 0
 L_BOUND = VISUALIZATION_PARAMETER["BOUNDARY"]["L_BOUND"]
 ENCODER_DIMS = VISUALIZATION_PARAMETER["ENCODER_DIMS"]
 DECODER_DIMS = VISUALIZATION_PARAMETER["DECODER_DIMS"]
@@ -107,13 +106,14 @@ S_N_EPOCHS = VISUALIZATION_PARAMETER["S_N_EPOCHS"]
 N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
+# MAX_EPOCH = 1
+VIS_MODEL_NAME = 'base' ### saved_as VIS_MODEL_NAME.pth
 
-VIS_MODEL_NAME = 'proxy' ### saved_as VIS_MODEL_NAME.pth
-
-EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
 # Define hyperparameters
+GPU_ID = 1
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
+print("device", DEVICE)
 
 import Model.model as subject_model
 net = eval("subject_model.{}()".format(NET))
@@ -137,6 +137,66 @@ model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 negative_sample_rate = 5
 min_dist = .1
 _a, _b = find_ab_params(1.0, min_dist)
+
+class UmapLoss(nn.Module):
+    def __init__(self, negative_sample_rate, device, _a=1.0, _b=1.0, repulsion_strength=1.0):
+        super(UmapLoss, self).__init__()
+
+        self._negative_sample_rate = negative_sample_rate
+        self._a = _a,
+        self._b = _b,
+        self._repulsion_strength = repulsion_strength
+        self.DEVICE = torch.device(device)
+
+    @property
+    def a(self):
+        return self._a[0]
+
+    @property
+    def b(self):
+        return self._b[0]
+
+    def forward(self, embedding_to, embedding_from, probs, pred_edge_to, pred_edge_from):
+        # get negative samples
+        embedding_neg_to = torch.repeat_interleave(embedding_to, self._negative_sample_rate, dim=0)
+        repeat_neg = torch.repeat_interleave(embedding_from, self._negative_sample_rate, dim=0)
+        randperm = torch.randperm(repeat_neg.shape[0])
+        embedding_neg_from = repeat_neg[randperm]
+        neg_num = len(embedding_neg_from)
+
+        positive_distance = torch.norm(embedding_to - embedding_from, dim=1)
+        negative_distance = torch.norm(embedding_neg_to - embedding_neg_from, dim=1)
+
+        distance_embedding = torch.cat(
+            (
+                positive_distance,
+                negative_distance,
+            ),
+            dim=0,
+        )
+        probabilities_distance = convert_distance_to_probability(
+            distance_embedding, self.a, self.b
+        )
+        probabilities_distance = probabilities_distance.to(self.DEVICE)
+
+        probabilities_graph = torch.cat(
+            (probs, torch.zeros(neg_num).to(self.DEVICE)), dim=0,
+        )
+
+        probabilities_graph = probabilities_graph.to(device=self.DEVICE)
+
+        # compute cross entropy
+        (_, _, ce_loss) = compute_cross_entropy(
+            probabilities_graph,
+            probabilities_distance,
+            repulsion_strength=self._repulsion_strength,
+        )   
+
+        return torch.mean(ce_loss)
+
+
+
+
 umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
 recon_loss_fn = ReconstructionLoss(beta=1.0)
 single_loss_fn = SingleVisLoss(umap_loss_fn, recon_loss_fn, lambd=LAMBDA1)
@@ -144,8 +204,6 @@ single_loss_fn = SingleVisLoss(umap_loss_fn, recon_loss_fn, lambd=LAMBDA1)
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 
-
-    
 
 start_flag = 1
 
@@ -174,31 +232,11 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
     # Define Edge dataset
     
-    ###### generate the skeleton
-
-    skeleton_generator = CenterSkeletonGenerator(data_provider,EPOCH_START,1)
-    # Start timing
-    start_time = time.time()
-    proxy_path = os.path.join(data_provider.content_path, 'Model', 'Epoch_{}'.format(iteration), 'proxy.npy')
-    if os.path.exists(proxy_path):
-        high_bom = np.load(proxy_path)
-    else:
-        ## gennerate skeleton
-        high_bom,_ = skeleton_generator.center_skeleton_genertaion()
-        np.save(proxy_path, high_bom)
-
-    
-
-
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print("proxy generation finished ")
     
 
     t0 = time.time()
     ##### construct the spitial complex
-    # spatial_cons = ProxyBasedSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net,high_bom)
-    spatial_cons = TrustvisProxyEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS,high_bom)
+    spatial_cons = SingleEpochSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
     edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
     t1 = time.time()
 
@@ -210,7 +248,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     edge_from = edge_from[eliminate_zeros]
     probs = probs[eliminate_zeros]
     
-    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention)
+    labels_non_boundary = np.zeros(len(edge_to))
+    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention, labels_non_boundary)
 
     n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
     # chose sampler based on the number of dataset
@@ -227,7 +266,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
 
     t2=time.time()
-    trainer.train(PATIENT, MAX_EPOCH, data_provider, iteration)
+    trainer.train(PATIENT, MAX_EPOCH, data_provider,iteration)
     t3 = time.time()
     print('training:', t3-t2)
     # save result
@@ -252,19 +291,12 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 from singleVis.visualizer import visualizer
 now = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time())) 
 vis = visualizer(data_provider, projector, 200, "tab10")
-save_dir = os.path.join(data_provider.content_path, "Proxy")
+save_dir = os.path.join(data_provider.content_path, "Base")
 
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     vis.savefig(i, path=os.path.join(save_dir, "{}_{}_{}_{}.png".format(DATASET, i, VIS_METHOD,now)))
-    data = data_provider.train_representation(i)
-    data = data.reshape(data.shape[0],data.shape[1])
-
-    ##### save embeddings and background for visualization
-    emb = projector.batch_project(i,data)
-    np.save(os.path.join(CONTENT_PATH, 'Model', 'Epoch_{}'.format(i), 'embedding.npy'), emb)
-    vis.get_background(i,200)
 
 # emb = projector.batch_project(data_provider)
 
@@ -272,18 +304,11 @@ for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
 ########################################################################################################################
 #                                                       EVALUATION                                                     #
 ########################################################################################################################
-# eval_epochs = range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD)
-# EVAL_EPOCH_DICT = {
-#     "mnist":[1,10,15],
-#     "fmnist":[1,25,50],
-#     "cifar10":[1,100,199]
-# }
-# eval_epochs = EVAL_EPOCH_DICT[DATASET]
 evaluator = Evaluator(data_provider, projector)
 
 
 
 
-Evaluation_NAME = 'proxy_eval'
+Evaluation_NAME = 'base_eval'
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     evaluator.save_epoch_eval(i, 15, temporal_k=5, file_name="{}".format(Evaluation_NAME))

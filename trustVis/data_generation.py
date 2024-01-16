@@ -39,12 +39,10 @@ class DataGenerationAbstractClass(ABC):
     #     pass
 
 class DataGeneration(DataGenerationAbstractClass):
-    def __init__(self, model, data_provider, epoch, device, n_neighbors=15):
+    def __init__(self, data_provider, epoch, n_neighbors=15):
         self.data_provider = data_provider
-        self.model = model
         # self.model = model
         self.epoch = epoch
-        self.DEVICE = device
         self.n_neighbors = n_neighbors
     
     def get_nearest_n_neighbors(self, train_data, n_neighbors,metric='euclidean'):
@@ -73,7 +71,7 @@ class DataGeneration(DataGenerationAbstractClass):
         sort_preds = np.sort(mesh_preds, axis=1)
         diff = (sort_preds[:, -1] - sort_preds[:, -2]) / (sort_preds[:, -1] - sort_preds[:, 0])
         border = np.zeros(len(diff), dtype=np.uint8) + 0.05
-        border[diff < 0] = 1
+        border[diff < 0.1] = 1
         
         return border
 

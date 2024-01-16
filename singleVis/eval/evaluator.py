@@ -72,11 +72,17 @@ class Evaluator(EvaluatorAbstractClass):
             print("#test# nn preserving : {:.2f}/{:d} in epoch {:d}".format(val, n_neighbors, epoch))
         return val
 
-    def eval_b_train(self, epoch, n_neighbors):
+    def eval_b_train(self, epoch, n_neighbors, border=None):
+        if border is not None:
+            if border.size > 0:
+                border_centers = border
+        else:
+            border_centers = self.data_provider.border_representation(epoch)
+            border_centers = border_centers.reshape(len(border_centers), -1)
+
         train_data = self.data_provider.train_representation(epoch)
         train_data = train_data.reshape(len(train_data), -1)
-        border_centers = self.data_provider.border_representation(epoch)
-        border_centers = border_centers.reshape(len(border_centers), -1)
+       
         low_center = self.projector.batch_project(epoch, border_centers)
         low_train = self.projector.batch_project(epoch, train_data)
 

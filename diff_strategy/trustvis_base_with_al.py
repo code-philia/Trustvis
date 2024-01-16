@@ -14,7 +14,7 @@ from umap.umap_ import find_ab_params
 
 
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, DummyTemporalLoss, DVIALLoss,UmapLossfix_neg,TrustALLoss
+from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, DummyTemporalLoss, DVIALLoss,TrustALLoss
 from singleVis.edge_dataset import DVIDataHandler
 from singleVis.trainer import TRUSTALTrainer
 from singleVis.data import NormalDataProvider
@@ -65,6 +65,7 @@ LEN = TRAINING_PARAMETER["train_num"]
 # Training parameter (visualization model)
 VISUALIZATION_PARAMETER = config["VISUALIZATION"]
 LAMBDA1 = VISUALIZATION_PARAMETER["LAMBDA1"]
+LAMBDA1 = 1
 LAMBDA2 = VISUALIZATION_PARAMETER["LAMBDA2"]
 # B_N_EPOCHS = VISUALIZATION_PARAMETER["BOUNDARY"]["B_N_EPOCHS"]
 B_N_EPOCHS = 0
@@ -114,7 +115,6 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     # Define DVI Loss
     if start_flag:
         temporal_loss_fn = DummyTemporalLoss(DEVICE)
-        # umap_loss_fn = UmapLossfix_neg(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
         criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0, device=DEVICE)
         start_flag = 0
     else:
@@ -138,7 +138,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     
 
     """generate boundary samples"""
-    DataGenerator = DataGeneration(net, data_provider, iteration, DEVICE, 2)
+    DataGenerator = DataGeneration(data_provider, iteration, 2)
     boundary_sample = DataGenerator.get_boundary_sample()
 
     trainer = TRUSTALTrainer(model, criterion, optimizer, lr_scheduler, edge_loader=None, DEVICE=DEVICE,iteration=iteration, data_provider=data_provider, prev_model=prev_model, S_N_EPOCHS=S_N_EPOCHS, B_N_EPOCHS=B_N_EPOCHS, N_NEIGHBORS=N_NEIGHBORS,threshold=0.1,resolution=400, mul=0.1, diff_pred=0.5, pred_alpha=pred_, boundary_sample=boundary_sample)

@@ -84,12 +84,48 @@ class HybridDataHandler(Dataset):
         return len(self.edge_to)
 
 class DVIDataHandler(Dataset):
-    def __init__(self, edge_to, edge_from, feature_vector, attention, transform=None):
+    def __init__(self, edge_to, edge_from, feature_vector, attention, labels, probs, pred, transform=None):
         self.edge_to = edge_to
         self.edge_from = edge_from
         self.data = feature_vector
         self.attention = attention
         self.transform = transform
+        self.labels = labels
+        self.probs = probs
+        self.pred = pred
+
+    def __getitem__(self, item):
+        edge_to_idx = self.edge_to[item]
+        edge_from_idx = self.edge_from[item]
+        edge_to = self.data[edge_to_idx]
+        edge_from = self.data[edge_from_idx]
+        edge_to_pred = self.pred[edge_to_idx]
+        edge_from_pred = self.pred[edge_from_idx]
+        a_to = self.attention[edge_to_idx]
+        a_from = self.attention[edge_from_idx]
+        label = self.labels[item]  # 获取标签
+        probs = self.probs[item]
+    
+        if self.transform is not None:
+            # TODO correct or not?
+            edge_to = Image.fromarray(edge_to)
+            edge_to = self.transform(edge_to)
+            edge_from = Image.fromarray(edge_from)
+            edge_from = self.transform(edge_from)
+        return edge_to, edge_from, a_to, a_from, label, probs,edge_to_pred,edge_from_pred
+
+    def __len__(self):
+        # return the number of all edges
+        return len(self.edge_to)
+class TrustvisDataHandler(Dataset):
+    def __init__(self, edge_to, edge_from, feature_vector, attention, labels, pred, transform=None):
+        self.edge_to = edge_to
+        self.edge_from = edge_from
+        self.data = feature_vector
+        self.attention = attention
+        self.transform = transform
+        self.labels = labels
+        self.pred = pred
 
     def __getitem__(self, item):
         edge_to_idx = self.edge_to[item]
@@ -98,13 +134,57 @@ class DVIDataHandler(Dataset):
         edge_from = self.data[edge_from_idx]
         a_to = self.attention[edge_to_idx]
         a_from = self.attention[edge_from_idx]
+        label = self.labels[item]  # 获取标签
+    
         if self.transform is not None:
             # TODO correct or not?
             edge_to = Image.fromarray(edge_to)
             edge_to = self.transform(edge_to)
             edge_from = Image.fromarray(edge_from)
             edge_from = self.transform(edge_from)
-        return edge_to, edge_from, a_to, a_from
+        edge_to_pred = self.pred[edge_to_idx]
+        edge_from_pred = self.pred[edge_from_idx]
+        return edge_to, edge_from, a_to, a_from, label,edge_to_pred,edge_from_pred
+    
+
+    def __len__(self):
+        # return the number of all edges
+        return len(self.edge_to)
+class DataWithBoundaryHandler(Dataset):
+    def __init__(self, edge_to, edge_from, feature_vector, attention, b_edge_to, b_edge_from, transform=None):
+        self.edge_to = edge_to
+        self.edge_from = edge_from
+        self.data = feature_vector
+        self.attention = attention
+        self.transform = transform
+
+        self.b_edge_to = b_edge_to
+        self.b_edge_from = b_edge_from  
+
+    def __getitem__(self, item):
+        edge_to_idx = self.edge_to[item]
+        edge_from_idx = self.edge_from[item]
+        edge_to = self.data[edge_to_idx]
+        edge_from = self.data[edge_from_idx]
+        a_to = self.attention[edge_to_idx]
+        a_from = self.attention[edge_from_idx]
+
+        ######## boundary crossing edge ###############
+        b_edge_to_idx = self.b_edge_to
+        b_dege_from_idx = self.b_edge_from
+        b_edge_to = self.data[b_edge_to_idx]
+        b_edge_from = self.data(b_dege_from_idx)
+
+
+
+
+        if self.transform is not None:
+            # TODO correct or not?
+            edge_to = Image.fromarray(edge_to)
+            edge_to = self.transform(edge_to)
+            edge_from = Image.fromarray(edge_from)
+            edge_from = self.transform(edge_from)
+        return edge_to, edge_from, a_to, a_from, b_edge_to,b_edge_from
 
     def __len__(self):
         # return the number of all edges

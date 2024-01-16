@@ -7,13 +7,14 @@ from tqdm import tqdm
 import torch
 from singleVis.losses import PositionRecoverLoss
 from torch.utils.data import DataLoader, WeightedRandomSampler
+from itertools import zip_longest
 
 import copy
 import numpy as np
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.spatial_skeleton_edge_constructor import ActiveLearningEpochSpatialEdgeConstructor
 
-from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor,ErrorALEdgeConstructor,TrustvisSpatialEdgeConstructor,TrustALSpatialEdgeConstructor
+from singleVis.spatial_edge_constructor import PROXYEpochSpatialEdgeConstructor
 from singleVis.edge_dataset import DVIDataHandler,TrustDataHandler
 from singleVis.eval.evaluator import Evaluator
 import sys
@@ -473,15 +474,16 @@ class DVITrainer(SingleVisTrainer):
         t = tqdm(self.edge_loader, leave=True, total=len(self.edge_loader))
         
         for data in t:
-            edge_to, edge_from, a_to, a_from = data
+            edge_to, edge_from, a_to, a_from, labels,probs,pred_edge_to, pred_edge_from = data
 
             edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
             edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
             a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
             a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
+            probs = probs.to(device=self.DEVICE, dtype=torch.float32)
 
-            outputs = self.model(edge_to, edge_from)
-            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
+            # outputs = self.model(edge_to, edge_from)
+            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, probs,pred_edge_to, pred_edge_from )
             # + 1 * radius_loss + orthogonal_loss
 
             # + distance_order_loss
@@ -616,6 +618,233 @@ class DVITrainer(SingleVisTrainer):
             json.dump(evaluation, f)
 
 
+class TrustTrainer(SingleVisTrainer):
+    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE,combined_loader,boundary_loss):
+        super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
+        self.combined_loader = combined_loader
+        self.boundary_loss = boundary_loss
+    
+    
+    def train_step(self,data_provider,iteration,epoch):
+        
+        projector = PROCESSProjector(self.model, data_provider.content_path, '', self.DEVICE)
+        evaluator = Evaluator(data_provider, projector)
+        evaluator.eval_inv_train(iteration)
+        evaluator.eval_inv_test(iteration)
+
+        self.model = self.model.to(device=self.DEVICE)
+        self.model.train()
+        all_loss = []
+        umap_losses = []
+        recon_losses = []
+        temporal_losses = []
+        b_losses = []
+        bon_con_losses = []
+        
+        total_loss = 0
+
+        ####### for conterfactural pairs
+
+        if self.combined_loader != None:
+            t2 = tqdm(self.combined_loader, leave=True, total=len(self.combined_loader))
+
+            for data in t2:
+                edge_to, edge_from, a_to, a_from, labels,probs,pred_edge_to, pred_edge_from  = data
+                edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
+                edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
+                a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
+                a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
+                # outputs = self.model(edge_to, edge_from)
+                probs = probs.to(device=self.DEVICE, dtype=torch.float32)
+
+                non_boundary_mask = labels == 0
+                boundary_mask = labels == 1
+    
+                boundary_loss = torch.tensor(0.0, device=self.DEVICE)
+
+                # boundary crossing
+                # if boundary_mask.any() and epoch > 6:
+                #     boundary_loss = self.boundary_loss(edge_to[boundary_mask], edge_from[boundary_mask], self.model,probs[boundary_mask])
+                #     b_losses.append(boundary_loss.mean().item())
+
+         
+                # non-boundary crossing
+                if non_boundary_mask.any():
+                    umap_l, recon_l, temporal_l, loss = self.criterion(edge_to[non_boundary_mask], edge_from[non_boundary_mask], 
+                                               a_to[non_boundary_mask], a_from[non_boundary_mask], 
+                                               self.model,probs[non_boundary_mask], pred_edge_to[non_boundary_mask], pred_edge_from[non_boundary_mask])
+                    all_loss.append(loss.mean().item())
+                    umap_losses.append(umap_l.item())
+                    recon_losses.append(recon_l.item())
+                    temporal_losses.append(temporal_l.mean().item())
+                                # non-boundary crossing
+                    # bon_con_losses.append(bon_con_loss.mean().item())
+
+    
+
+                # combine loss
+                total_loss = loss.mean() + boundary_loss.mean() if boundary_mask.any() else loss.mean()
+                all_loss.append(total_loss.item())
+            
+                self.optimizer.zero_grad()
+                total_loss.backward()
+                # loss_new.backward()
+                self.optimizer.step()
+            
+            b_loss= sum(b_losses) / len(b_losses) if b_losses else 0
+        
+        else:
+            b_loss = 0
+
+            t = tqdm(self.edge_loader, leave=True, total=len(self.edge_loader))
+        
+            for data in t:
+                edge_to, edge_from, a_to, a_from,_ = data
+
+                edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
+                edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
+                a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
+                a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
+
+                # outputs = self.model(edge_to, edge_from)
+                umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model)
+                # + 1 * radius_loss + orthogonal_loss
+
+                # + distance_order_loss
+                # all_loss.append(loss.item())
+                # umap_losses.append(umap_l.item())
+                # recon_losses.append(recon_l.item())
+                # temporal_losses.append(temporal_l.item())
+                all_loss.append(loss.mean().item())
+                umap_losses.append(umap_l.item())
+                recon_losses.append(recon_l.item())
+                temporal_losses.append(temporal_l.mean().item())
+                # ===================backward====================
+                self.optimizer.zero_grad()
+                loss.mean().backward()
+                # loss_new.backward()
+                self.optimizer.step()
+
+        
+
+
+        self._loss = sum(all_loss) / len(all_loss)
+        self.model.eval()
+        
+        
+        print('umap:{:.4f}\trecon_l:{:.4f}\tb_loss{:.4f}\tb_con_loss{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
+                                                                sum(recon_losses) / len(recon_losses),
+                                                                b_loss,  0, sum(all_loss) / len(all_loss)))
+        return self.loss
+    
+    # def radius_loss(self,embeddings, center, alpha=1.0):
+    #     """
+    #     Radius loss function.
+    #     Args:
+    #         embeddings: the 2D embeddings, tensor of shape (N, 2)
+    #         center: the center of the circle in the 2D space, tensor of shape (2,)
+    #         alpha: a coefficient for the radius loss, controlling its importance.
+    #     Returns:
+    #         A scalar tensor representing the radius loss.
+    #     """
+    #     radii = torch.norm(embeddings - center, dim=1)
+    #     normalized_radii = torch.nn.functional.normalize(radii, dim=0, p=2)
+    #     normalized_mean_radii = torch.mean(normalized_radii)
+
+    #     return alpha * normalized_mean_radii
+    def train(self, PATIENT, MAX_EPOCH_NUMS, data_provider, iteration):
+        patient = PATIENT
+        time_start = time.time()
+        for epoch in range(MAX_EPOCH_NUMS):
+            print("====================\nepoch:{}\n===================".format(epoch+1))
+            prev_loss = self.loss
+            loss = self.train_step(data_provider, iteration,epoch)
+            self.lr_scheduler.step()
+            # early stop, check whether converge or not
+            if prev_loss - loss < 5E-3:
+                if patient == 0:
+                    break
+                else:
+                    patient -= 1
+            else:
+                patient = PATIENT
+
+        time_end = time.time()
+        time_spend = time_end - time_start
+        print("Time spend: {:.2f} for training vis model...".format(time_spend))
+    def radius_loss(self, embeddings, center, alpha=1.0):
+        """
+        Modified radius loss function that tries to maximize the average distance.
+        Args:
+            embeddings: the 2D embeddings, tensor of shape (N, 2)
+            center: the center of the circle in the 2D space, tensor of shape (2,)
+            alpha: a coefficient for the radius loss, controlling its importance.
+        Returns:
+            A scalar tensor representing the radius loss.
+        """
+        radii = torch.norm(embeddings - center, dim=1)
+        normalized_radii = torch.nn.functional.normalize(radii, dim=0, p=2)
+        normalized_mean_radii = torch.mean(normalized_radii)
+
+        return -alpha * normalized_mean_radii
+    
+    def orthogonal_loss(self, embeddings, beta=0.001):
+        """
+        Orthogonal loss function that tries to decorrelate the embeddings.
+        Args:
+            embeddings: the 2D embeddings, tensor of shape (N, 2)
+            beta: a coefficient for the orthogonal loss, controlling its importance.
+        Returns:
+            A scalar tensor representing the orthogonal loss.
+        """
+        gram_matrix = torch.mm(embeddings, embeddings.t())
+        identity = torch.eye(embeddings.shape[0]).to(embeddings.device)
+        loss = torch.norm(gram_matrix - identity)
+        return beta * loss
+
+    
+    def distance_order_loss(self,high_embeddings, low_embeddings, high_center, low_center, beta=0.001):
+        """
+        Distance order preserving loss function.
+        Args:
+            high_embeddings: the high-dimensional embeddings, tensor of shape (N, D)
+            low_embeddings: the 2D embeddings, tensor of shape (N, 2)
+            high_center: the center of the sphere in the high-dimensional space, tensor of shape (D,)
+            low_center: the center of the circle in the 2D space, tensor of shape (2,)
+            beta: a coefficient for the distance order loss, controlling its importance.
+        Returns:
+            A scalar tensor representing the distance order loss.
+        """
+        high_distances = torch.norm(high_embeddings - high_center, dim=1)
+        low_distances = torch.norm(low_embeddings - low_center, dim=1)
+
+        high_order = torch.argsort(high_distances)
+        low_order = torch.argsort(low_distances)
+        high_order = high_order.float()
+        low_order = low_order.float()
+
+        # loss = torch.norm(high_order - low_order)
+        loss = torch.norm(high_order - low_order) / high_order.shape[0]
+        # loss = torch.sigmoid(torch.norm(high_order - low_order) / high_order.shape[0])
+
+
+        return beta * loss
+    
+    
+    def record_time(self, save_dir, file_name, operation, iteration, t):
+        # save result
+        save_file = os.path.join(save_dir, file_name+".json")
+        if not os.path.exists(save_file):
+            evaluation = dict()
+        else:
+            f = open(save_file, "r")
+            evaluation = json.load(f)
+            f.close()
+        if operation not in evaluation.keys():
+            evaluation[operation] = dict()
+        evaluation[operation][iteration] = round(t, 3)
+        with open(save_file, 'w') as f:
+            json.dump(evaluation, f)
         
 class DVIActiveLearningTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE):
@@ -1071,238 +1300,6 @@ class PROXYALMODITrainer(SingleVisTrainer):
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
 
-class TRUSTALTrainer(SingleVisTrainer):
-    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, iteration, data_provider, prev_model, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, threshold, resolution, mul, diff_pred, pred_alpha, boundary_sample, **kwargs):
-        super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, **kwargs)
-        self.is_first_active_learning = True  # Add this line
-        # self.high_bom = high_bom
-        # self.high_rad = high_rad
-        self.iteration = iteration
-        self.data_provider = data_provider
-        self.prev_model = prev_model
-        self.S_N_EPOCHS = S_N_EPOCHS
-        self.B_N_EPOCHS = B_N_EPOCHS
-        self.N_NEIGHBORS = N_NEIGHBORS
-        self.threshold = threshold
-        self.resolution = resolution
-        self.projector = PROCESSProjector(self.model,self.data_provider.content_path, '',self.DEVICE)
-        self.train_data = self.data_provider.train_representation(self.iteration)
-        self.train_data = self.train_data.reshape(self.train_data.shape[0],self.train_data.shape[1])
-        self.mul = mul
-        self.pred_alpha = pred_alpha
-        self.diff_pred = diff_pred
-        self.boundary_sample = boundary_sample
-        
-
-    def al_loader(self):
-        print("eval ing")
-        # This method calculates the loss of each sample in the dataset.
-        # It returns a list of losses and updates the edge loader with the inverse of these losses as weights.
-        losses = []
-        
-        # generate grid samples
-        # grid_generator = GridGenerator(self.data_provider,self.iteration,self.projector, self.threshold, self.resolution)
-        # # self.grid_high_mask = grid_generator.gen_grids_near_to_training_data(alpha=self.diff_pred)
-        # # print("all near training data grids shape:", self.grid_high_mask.shape)
-        evaluator = Evaluator(self.data_provider, self.projector)
-        evaluator.eval_inv_train(self.iteration)
-        evaluator.eval_inv_test(self.iteration)
-        # Ensure the model is in evaluation mode
-        self.model.eval()
-
-        # grid_pred_ = self.data_provider.get_pred(self.iteration, self.grid_high_mask)
-
-        # grid_pred = grid_pred_.argmax(axis=1)
-        # # self.grid_high_mask = torch.tensor(self.grid_high_mask).to(device=self.DEVICE, dtype=torch.float32)
-        # grid_high_mask_emb = self.projector.batch_project(self.iteration, self.grid_high_mask )
-        # grid_second_high_mask = self.projector.batch_inverse(self.iteration, grid_high_mask_emb)
-        
-        # ### base on pred res find error
-        # grid_second_pred_ = self.data_provider.get_pred(self.iteration, grid_second_high_mask)
-        # grid_second_pred = grid_second_pred_.argmax(axis=1)
-
-        # error_indices = [i for i in range(len(grid_pred)) if grid_pred[i] != grid_second_pred[i]]
-        # self.error_grids = self.grid_high_mask[error_indices]
-        # _, high_err_indices = self.evaluate_and_find_errors(grid_second_pred_,grid_pred_)
-        # high_error_grids = self.grid_high_mask[high_err_indices]
-        # print("current pred error grids:", len(error_indices), "high_err_indices", len(high_err_indices))
-
-
-        # TODO select best consructor
-        # self.retrain_data = np.concatenate((self.grid_high_mask, self.train_data),axis=0)
-        self.retrain_data = np.concatenate((self.boundary_sample, self.train_data),axis=0)
-        al_spatial_cons = TrustALSpatialEdgeConstructor(self.data_provider, self.iteration, self.S_N_EPOCHS, self.B_N_EPOCHS, self.N_NEIGHBORS, self.retrain_data, self.pred_alpha)
-        al_edge_to, al_edge_from, al_probs, al_feature_vectors, al_attention = al_spatial_cons.construct()
-
-        al_probs = al_probs / (al_probs.max()+1e-3)
-        eliminate_zeros = al_probs>5e-2    #1e-3
-        al_edge_to = al_edge_to[eliminate_zeros]
-        al_edge_from = al_edge_from[eliminate_zeros]
-        al_probs = al_probs[eliminate_zeros]
-
-        #TODO
-        # pred = self.data_provider.get_pred(self.iteration, al_feature_vectors)
-        # dataset = TrustDataHandler(al_edge_to, al_edge_from, al_feature_vectors, al_attention, pred)
-        dataset = DVIDataHandler(al_edge_to, al_edge_from, al_feature_vectors, al_attention)
-
-        n_samples = int(np.sum(self.S_N_EPOCHS * al_probs) // 1)
-
-        # chose sampler based on the number of dataset
-        if len(al_edge_to) > pow(2,24):
-            sampler = CustomWeightedRandomSampler(al_probs, n_samples, replacement=True)
-        else:
-            sampler = WeightedRandomSampler(al_probs, n_samples, replacement=True)
-        new_loader = DataLoader(dataset, batch_size=2000, sampler=sampler, num_workers=8, prefetch_factor=10)
-        # new_loader = ActiveLearningEdgeLoader(current_loader.dataset, weights, batch_size=current_loader.batch_size)
-        return losses, new_loader
-    
-    def train_step(self, edge_loader):
-       
-        self.model = self.model.to(device=self.DEVICE)
-        self.model.train()
-        all_loss = []
-        umap_losses = []
-        recon_losses = []
-        temporal_losses = []
-
-        t = tqdm(edge_loader, leave=True, total=len(edge_loader))
-        
-        for data in t:
-            edge_to, edge_from, a_to, a_from= data
-            
-
-            edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
-            edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
-            a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
-            a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
-
-            # edge_to_pred = torch.Tensor(edge_to_pred).to(device=self.DEVICE, dtype=torch.float32)
-            # edge_from_pred = torch.Tensor(edge_from_pred).to(device=self.DEVICE, dtype=torch.float32)
-
-
-            outputs = self.model(edge_to, edge_from)
-
-            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, outputs)
-       
-            all_loss.append(loss.mean().item())
-            umap_losses.append(umap_l.item())
-            recon_losses.append(recon_l.item())
-            temporal_losses.append(temporal_l.mean().item())
-            # pred_losses.append(pred_loss.item())
-           
-            # ===================backward====================
-            self.optimizer.zero_grad()
-            loss.mean().backward()
-            self.optimizer.step()  
-
-
-        self._loss = sum(all_loss) / len(all_loss)
-        self.model.eval()
-        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
-                                                                sum(recon_losses) / len(recon_losses),
-                                                                sum(temporal_losses) / len(temporal_losses),
-                                                                sum(all_loss) / len(all_loss)))
-        return self.loss
-    
-    def run_epoch(self, epoch, current_loader, is_active_learning=False, is_full_data=False):
-        print("====================\nepoch:{}\n===================".format(epoch+1))
-        start_time = time.time()
-
-        if is_active_learning and is_full_data == False:
-            
-            _, current_loader = self.al_loader()
-                ### generate grid for al
-
-
-            # Adjust learning rate for active learning
-            if self.is_first_active_learning:
-                print("change learning rate")
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] *= self.mul  # or set to any value you want
-                self.is_first_active_learning = False
-            
-        prev_loss = self.loss
-
-        if is_full_data:
-            print("full data")
-            loss = self.train_step(self.edge_loader)  # use DVITrainer's train_step
-        else:
-            loss = self.train_step(current_loader)  # use DVITrainer's train_step
-        
-        self.lr_scheduler.step()
-
-        elapsed_time = time.time() - start_time
-        print("Epoch completed in: {:.2f} seconds".format(elapsed_time))
-
-        return prev_loss, loss, current_loader
-    
-    def train(self, PATIENT, MAX_EPOCH_NUMS):
-        start_flag = 1
-        if start_flag:
-            current_loader = self.edge_loader
-            start_flag = 0
-        print("ininin in dvi")
-        patient = PATIENT
-        time_start = time.time()
-        # Pretraining
-        # for epoch in range(10):
-        #     print("Pretraining")
-        #     _, _, current_loader= self.run_epoch(epoch, current_loader, is_active_learning=False,is_full_data=True)
-
-
-        for epoch in range(MAX_EPOCH_NUMS):
-            print("In active learning")
-            # is_full_data = (epoch % 3 == 0)  # retrain with full data every RE_TRAINING_INTERVAL epochs
-            prev_loss, loss, current_loader = self.run_epoch(epoch, current_loader, is_active_learning=True, is_full_data=False)
-      
-            # Early stop, check whether converge or not
-            if abs(prev_loss - loss) < 5E-3:
-                if patient == 0:
-                    break
-                else:
-                    patient -= 1
-            else:
-                patient = PATIENT
-
-        time_end = time.time()
-        time_spend = time_end - time_start
-        print("Time spend: {:.2f} for training vis model...".format(time_spend))   
-
-        self.prev_model.load_state_dict(self.model.state_dict())
-        for param in self.prev_model.parameters():
-            param.requires_grad = False
-        w_prev = dict(self.prev_model.named_parameters())
-    
-    def evaluate_and_find_errors(self, data, recon_data, error_threshold=0.1):
-       
-        high_error_indices = []
-        reconstruction_errors = []
-
-        for i, (x, x_prime) in enumerate(zip(data, recon_data)):
-            # 计算重构误差，这里使用 NumPy 来计算均方误差
-            reconstruction_error = np.mean((x - x_prime) ** 2)
-            reconstruction_errors.append(reconstruction_error)
-
-            # 如果误差超过阈值，则标记为高误差点
-            if reconstruction_error > error_threshold:
-                high_error_indices.append(i)
-
-        return reconstruction_errors, high_error_indices
-
-    def record_time(self, save_dir, file_name, operation, iteration, t):
-        # save result
-        save_file = os.path.join(save_dir, file_name+".json")
-        if not os.path.exists(save_file):
-            evaluation = dict()
-        else:
-            f = open(save_file, "r")
-            evaluation = json.load(f)
-            f.close()
-        if operation not in evaluation.keys():
-            evaluation[operation] = dict()
-        evaluation[operation][iteration] = round(t, 3)
-        with open(save_file, 'w') as f:
-            json.dump(evaluation, f)
 
 class DVIALMODITrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE, grid_high_mask, high_bom, high_rad, iteration, data_provider, prev_model, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, **kwargs):

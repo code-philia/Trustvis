@@ -10,15 +10,16 @@ import time
 import numpy as np
 import argparse
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader,ConcatDataset
 from torch.utils.data import WeightedRandomSampler
 from umap.umap_ import find_ab_params
+from torch.utils.data import Sampler
 
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss, ReconstructionPredLoss, ReconstructionPredEdgeLoss
-from singleVis.edge_dataset import DVIDataHandler
-from singleVis.trainer import DVITrainer
+from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss, BoundaryAwareLoss, BoundaryDistanceConsistencyLoss,TrustvisLoss
+from singleVis.edge_dataset import DVIDataHandler, DataWithBoundaryHandler
+from singleVis.trainer import DVITrainer,TrustTrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
 from singleVis.spatial_edge_constructor import TrustvisSpatialEdgeConstructor
@@ -49,12 +50,9 @@ new_path = os.path.join(parent_path, 'training_dynamic')
 
 
 parser.add_argument('--content_path', type=str,default=new_path)
-# parser.add_argument('--start', type=int,default=1)
-# parser.add_argument('--end', type=int,default=3)
+
 parser.add_argument('--epoch' , type=int, default=3)
 parser.add_argument('--pred' , type=float, default=0.5)
-
-# parser.add_argument('--epoch_end', type=int)
 parser.add_argument('--epoch_period', type=int,default=1)
 parser.add_argument('--preprocess', type=int,default=0)
 parser.add_argument('--base',type=bool,default=False)
@@ -93,8 +91,10 @@ LEN = TRAINING_PARAMETER["train_num"]
 
 # Training parameter (visualization model)
 VISUALIZATION_PARAMETER = config["VISUALIZATION"]
+LAMBDA1 = VISUALIZATION_PARAMETER["LAMBDA1"]
 LAMBDA1 = 1
 LAMBDA2 = VISUALIZATION_PARAMETER["LAMBDA2"]
+
 B_N_EPOCHS = 0
 L_BOUND = VISUALIZATION_PARAMETER["BOUNDARY"]["L_BOUND"]
 ENCODER_DIMS = VISUALIZATION_PARAMETER["ENCODER_DIMS"]
@@ -127,8 +127,6 @@ data_provider = NormalDataProvider(CONTENT_PATH, net, EPOCH_START, EPOCH_END, EP
 PREPROCESS = args.preprocess
 if PREPROCESS:
     data_provider._meta_data()
-    if B_N_EPOCHS >0:
-        data_provider._estimate_boundary(LEN // 10, l_bound=L_BOUND)
 
 # Define visualization models
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
@@ -139,6 +137,7 @@ negative_sample_rate = 5
 min_dist = .1
 _a, _b = find_ab_params(1.0, min_dist)
 umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
+
 # Define Projector
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
@@ -151,10 +150,11 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     # Define DVI Loss
     if start_flag:
         temporal_loss_fn = DummyTemporalLoss(DEVICE)
+        bon_dis_con_loss_fn = BoundaryDistanceConsistencyLoss(data_provider, iteration,DEVICE )
         # recon_loss_fn = ReconstructionPredLoss(data_provider=data_provider,epoch=iteration, beta=1.0)
         recon_loss_fn = ReconstructionLoss(beta=1.0)
-        # recon_loss_fn = ReconstructionPredEdgeLoss(data_provider=data_provider,iteration=iteration, beta=1.0)
-        criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
+
+        criterion = TrustvisLoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, bon_dis_con_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
         start_flag = 0
     else:
         # TODO AL mode, redefine train_representation
@@ -179,32 +179,66 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     print("pred_lambda",pred_lambda)
     ##### construct the spitial complex
     spatial_cons = TrustvisSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, pred_lambda)
-    edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
+    edge_to, edge_from, probs, feature_vectors, attention, b_edge_to, b_edge_from, b_probs = spatial_cons.construct()
+    # 为非边界点创建标签（假设为0）
+    labels_non_boundary = np.zeros(len(edge_to))
+    # 为边界点创建标签（假设为1）
+    labels_boundary = np.ones(len(b_edge_to))
+
     t1 = time.time()
+    print("length of boundary and pred_Same:",len(b_edge_to), len(edge_to))
 
     print('complex-construct:', t1-t0)
 
     probs = probs / (probs.max()+1e-3)
-    eliminate_zeros = probs> 1e-3    #1e-3
+    eliminate_zeros = probs > 1e-3    #1e-3
     edge_to = edge_to[eliminate_zeros]
     edge_from = edge_from[eliminate_zeros]
     probs = probs[eliminate_zeros]
+    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention, labels_non_boundary)
     
-    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention)
-
     n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
     # chose sampler based on the number of dataset
     if len(edge_to) > pow(2,24):
         sampler = CustomWeightedRandomSampler(probs, n_samples, replacement=True)
     else:
         sampler = WeightedRandomSampler(probs, n_samples, replacement=True)
+
     edge_loader = DataLoader(dataset, batch_size=2000, sampler=sampler, num_workers=8, prefetch_factor=10)
+    
+    ############ for border start ####################
+    b_probs = b_probs / (b_probs.max()+1e-3)
+    b_eliminate_zeros = b_probs > 1e-3    #1e-3
+    b_edge_to = b_edge_to[b_eliminate_zeros]
+    b_edge_from = b_edge_from[b_eliminate_zeros]
+    b_probs = b_probs[b_eliminate_zeros]
+
+    b_dataset = DVIDataHandler(b_edge_to, b_edge_from, feature_vectors, attention,labels_boundary)
+    b_n_samples = int(np.sum(S_N_EPOCHS * b_probs) // 1)
+    print("b_n_samples",b_n_samples, n_samples)
+    if len(b_edge_to) > pow(2,24):
+        b_sampler = CustomWeightedRandomSampler(b_probs, b_n_samples, replacement=True)
+    else:
+        b_sampler = WeightedRandomSampler(b_probs, b_n_samples, replacement=True)
+    
+    b_edge_loader = DataLoader(b_dataset, batch_size=2000, sampler=b_sampler, num_workers=8, prefetch_factor=10)
+
+    boundary_loss = BoundaryAwareLoss(umap_loss=umap_loss_fn,device=DEVICE)
+
+    ############ for border end  ####################
+    combined_dataset = ConcatDataset([dataset, b_dataset])
+  
+    combine_sampler = WeightedRandomSampler(np.concatenate((probs,b_probs),axis=0), n_samples+b_n_samples, replacement=True)
+    combined_loader = DataLoader(combined_dataset, batch_size=2000, sampler=combine_sampler, num_workers=8)
+    
 
     ########################################################################################################################
     #                                                       TRAIN                                                          #
     ########################################################################################################################
 
-    trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
+    # trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
+    
+    trainer = TrustTrainer(model,criterion, optimizer, lr_scheduler, edge_loader=edge_loader, combined_loader=combined_loader, boundary_loss=boundary_loss, DEVICE=DEVICE)
 
     t2=time.time()
     trainer.train(PATIENT, MAX_EPOCH, data_provider,iteration)

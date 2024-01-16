@@ -10,23 +10,23 @@ import time
 import numpy as np
 import argparse
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader,ConcatDataset
 from torch.utils.data import WeightedRandomSampler
 from umap.umap_ import find_ab_params
 
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss
-from singleVis.edge_dataset import DVIDataHandler
-from singleVis.trainer import DVITrainer
+from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss,BoundaryAwareLoss, LogitUmapLoss, SementicUmapLoss
+from singleVis.edge_dataset import DVIDataHandler, TrustDataHandler
+from singleVis.trainer import DVITrainer,TrustTrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
-from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
+from singleVis.spatial_edge_constructor import TrustvisSpatialEdgeConstructor
 # from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
 
 from singleVis.projector import DVIProjector
 from singleVis.utils import find_neighbor_preserving_rate
-
+from sklearn.neighbors import NearestNeighbors
 ########################################################################################################################
 #                                                     DVI PARAMETERS                                                   #
 ########################################################################################################################
@@ -48,16 +48,20 @@ parent_path = os.path.dirname(current_path)
 new_path = os.path.join(parent_path, 'training_dynamic')
 
 
-parser.add_argument('--content_path', type=str,default=new_path)
+parser.add_argument('--content_path', type=str,default="/home/yifan/dataset/clean/pairflip/cifar10/0")
 # parser.add_argument('--start', type=int,default=1)
 # parser.add_argument('--end', type=int,default=3)
-parser.add_argument('--epoch' , type=int, default=3)
+parser.add_argument('--epoch' , type=int)
+parser.add_argument('--pred' , type=float, default=0.5)
 
 # parser.add_argument('--epoch_end', type=int)
 parser.add_argument('--epoch_period', type=int,default=1)
 parser.add_argument('--preprocess', type=int,default=0)
 parser.add_argument('--base',type=bool,default=False)
 args = parser.parse_args()
+#TODO why?
+pred_lambda = args.pred
+
 
 CONTENT_PATH = args.content_path
 sys.path.append(CONTENT_PATH)
@@ -80,6 +84,8 @@ EPOCH_PERIOD = config["EPOCH_PERIOD"]
 
 EPOCH_START = args.epoch
 EPOCH_END = args.epoch
+# EPOCH_START = 80
+# EPOCH_END = 110
 EPOCH_PERIOD = args.epoch_period
 
 # Training parameter (subject model)
@@ -104,7 +110,7 @@ N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 # MAX_EPOCH = 1
-VIS_MODEL_NAME = 'base' ### saved_as VIS_MODEL_NAME.pth
+VIS_MODEL_NAME = 'trustbase_gen_border' ### saved_as VIS_MODEL_NAME.pth
 
 
 # Define hyperparameters
@@ -135,11 +141,8 @@ negative_sample_rate = 5
 min_dist = .1
 _a, _b = find_ab_params(1.0, min_dist)
 umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
-recon_loss_fn = ReconstructionLoss(beta=1.0)
-single_loss_fn = SingleVisLoss(umap_loss_fn, recon_loss_fn, lambd=LAMBDA1)
 # Define Projector
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
-
 
 
 start_flag = 1
@@ -150,6 +153,10 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     # Define DVI Loss
     if start_flag:
         temporal_loss_fn = DummyTemporalLoss(DEVICE)
+        # recon_loss_fn = ReconstructionPredLoss(data_provider=data_provider,epoch=iteration, beta=1.0)
+        recon_loss_fn = ReconstructionLoss(beta=1.0)
+        umap_loss_fn = SementicUmapLoss(negative_sample_rate, DEVICE, data_provider, iteration, _a, _b, repulsion_strength=1.0)
+        # recon_loss_fn = ReconstructionPredEdgeLoss(data_provider=data_provider,iteration=iteration, beta=1.0)
         criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
         start_flag = 0
     else:
@@ -168,41 +175,131 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     optimizer = torch.optim.Adam(model.parameters(), lr=.01, weight_decay=1e-5)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
     # Define Edge dataset
-    
-    
+
 
     t0 = time.time()
+
+    ref_train_data = data_provider.train_representation(iteration).squeeze()
+    ref_train_data = ref_train_data.reshape(ref_train_data.shape[0],ref_train_data.shape[1])
+    k_neighbors = 15
+    high_neigh = NearestNeighbors(n_neighbors=k_neighbors, radius=0.4)
+    high_neigh.fit(ref_train_data)
+    knn_dists, knn_indices = high_neigh.kneighbors(ref_train_data, n_neighbors=k_neighbors, return_distance=True)
+
+    pred_dif_list = []
+    pred_dif_index_list = []
+    gen_border_data = np.array([])
+    import random
+    pred_origin = data_provider.get_pred(iteration, ref_train_data)
+    pred_res = data_provider.get_pred(iteration, ref_train_data).argmax(axis=1)
+    gen_border_data_path = os.path.join(data_provider.content_path, 'Model', 'Epoch_{}'.format(iteration), 'gen_border_data.npy')
+    if not os.path.exists(gen_border_data_path):
+        for i in range(len(knn_indices)):
+        # for i in range(5000):
+            neighbor_list = list(knn_indices[i])
+            neighbor_data = ref_train_data[neighbor_list]
+            # neighbor_pred_origin = pred_origin[neighbor_list]
+            neighbor_pred = pred_res[neighbor_list]
+            for j in range(len(neighbor_pred)):
+                if neighbor_pred[0] != neighbor_pred[j]:
+                    random_number = random.randint(1, 10)
+                    if random_number == 1:
+                    # if True:
+                    #     gen_points = np.linspace(neighbor_data[0], neighbor_data[j], 3)[1:-1]
+                        gen_points = np.array([(neighbor_data[0] + neighbor_data[j]) / 2])
+                        if len(gen_border_data) > 0:
+                            gen_border_data = np.concatenate((gen_border_data, gen_points), axis=0)
+                        else:
+                            gen_border_data = gen_points
+                            print(gen_border_data.shape)
+    
+            if (i % 5000) == 0:
+                print(i)
+        np.save(gen_border_data_path, gen_border_data)
+    else:
+        gen_border_data = np.load(gen_border_data_path)
+
+    print(gen_border_data.shape)
+    sub_n = 10000
+    if len(gen_border_data) > 10000:
+        random_indices = np.random.choice(len(gen_border_data), sub_n, replace=False)
+        # random get subsets
+        fin_gen_border_data = gen_border_data[random_indices, :]
+    else:
+        fin_gen_border_data = gen_border_data
+
+    print(fin_gen_border_data.shape)
+
     ##### construct the spitial complex
-    spatial_cons = SingleEpochSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
-    edge_to, edge_from, probs, feature_vectors, attention = spatial_cons.construct()
+    spatial_cons = TrustvisSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, gen_border_data=gen_border_data)
+    edge_to, edge_from, probs, feature_vectors, attention, b_edge_to, b_edge_from, b_probs = spatial_cons.construct()
+    # create non boundary labels
+    labels_non_boundary = np.zeros(len(edge_to))
+    # create boundary labels
+    labels_boundary = np.ones(len(b_edge_to))
+
     t1 = time.time()
+    print("length of boundary and pred_Same:",len(b_edge_to), len(edge_to))
 
     print('complex-construct:', t1-t0)
 
     probs = probs / (probs.max()+1e-3)
-    eliminate_zeros = probs> 1e-3    #1e-3
+    eliminate_zeros = probs > 1e-3    #1e-3
     edge_to = edge_to[eliminate_zeros]
     edge_from = edge_from[eliminate_zeros]
     probs = probs[eliminate_zeros]
-    
-    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention)
 
+    pred_list = data_provider.get_pred(iteration, feature_vectors)
+    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention, labels_non_boundary, probs,pred_list)
+    
     n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
     # chose sampler based on the number of dataset
     if len(edge_to) > pow(2,24):
         sampler = CustomWeightedRandomSampler(probs, n_samples, replacement=True)
     else:
         sampler = WeightedRandomSampler(probs, n_samples, replacement=True)
+
     edge_loader = DataLoader(dataset, batch_size=2000, sampler=sampler, num_workers=8, prefetch_factor=10)
+    
+    ############ for border start ####################
+    b_probs = b_probs / (b_probs.max()+1e-3)
+    b_eliminate_zeros = b_probs > 1e-3    #1e-3
+    b_edge_to = b_edge_to[b_eliminate_zeros]
+    b_edge_from = b_edge_from[b_eliminate_zeros]
+    b_probs = b_probs[b_eliminate_zeros]
+
+    b_dataset = DVIDataHandler(b_edge_to, b_edge_from, feature_vectors, attention,labels_non_boundary,b_probs,pred_list)
+    b_n_samples = int(np.sum(S_N_EPOCHS * b_probs) // 1)
+    print("b_n_samples",b_n_samples, n_samples)
+    if len(b_edge_to) > pow(2,24):
+        b_sampler = CustomWeightedRandomSampler(b_probs, b_n_samples, replacement=True)
+    else:
+        b_sampler = WeightedRandomSampler(b_probs, b_n_samples, replacement=True)
+    
+    b_edge_loader = DataLoader(b_dataset, batch_size=2000, sampler=b_sampler, num_workers=8, prefetch_factor=10)
+    
+    logit_umap_loss_fn = LogitUmapLoss(negative_sample_rate, DEVICE, data_provider, iteration, _a, _b, repulsion_strength=1.0)
+    boundary_loss = BoundaryAwareLoss(umap_loss=logit_umap_loss_fn,device=DEVICE,scale_factor=0.1, margin=3)
+
+    ############ for border end  ####################
+    combined_dataset = ConcatDataset([dataset, b_dataset])
+    np.save('probs.npy', np.concatenate((probs,b_probs),axis=0))
+  
+    combine_sampler = WeightedRandomSampler(np.concatenate((probs,b_probs),axis=0), n_samples+b_n_samples, replacement=True)
+    combined_loader = DataLoader(combined_dataset, batch_size=2000, sampler=combine_sampler, num_workers=8)
+    
 
     ########################################################################################################################
     #                                                       TRAIN                                                          #
     ########################################################################################################################
 
-    trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
+    # trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
+    
+    trainer = TrustTrainer(model,criterion, optimizer, lr_scheduler, edge_loader=edge_loader, combined_loader=combined_loader, boundary_loss=boundary_loss, DEVICE=DEVICE)
 
     t2=time.time()
-    trainer.train(PATIENT, MAX_EPOCH, data_provider,iteration)
+    trainer.train(PATIENT, MAX_EPOCH,data_provider,iteration)
+    # trainer.train(PATIENT, MAX_EPOCH)
     t3 = time.time()
     print('training:', t3-t2)
     # save result
@@ -227,7 +324,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 from singleVis.visualizer import visualizer
 now = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time())) 
 vis = visualizer(data_provider, projector, 200, "tab10")
-save_dir = os.path.join(data_provider.content_path, "Base")
+save_dir = os.path.join(data_provider.content_path, VIS_MODEL_NAME)
 
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
@@ -243,8 +340,6 @@ for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
 evaluator = Evaluator(data_provider, projector)
 
 
-
-
-Evaluation_NAME = 'base_eval'
+Evaluation_NAME = 'trustvisbase_eval'
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     evaluator.save_epoch_eval(i, 15, temporal_k=5, file_name="{}".format(Evaluation_NAME))

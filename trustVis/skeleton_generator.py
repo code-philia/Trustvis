@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
 from sklearn.metrics.pairwise import euclidean_distances
+from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
 from sklearn.datasets import make_blobs
@@ -278,6 +279,39 @@ class SkeletonGenerator:
         return final_values
 
 
+class CosineKMeans:
+    def __init__(self, n_clusters=2, max_iter=100, tol=1e-4):
+        self.n_clusters = n_clusters
+        self.max_iter = max_iter
+        self.tol = tol
+        self.centers = None
+
+    def fit(self, data, pred_data):
+        # 确保 pred_data 和 data 有相同数量的样本
+        assert len(pred_data) == len(data), "pred_data 和 data 必须有相同数量的样本"
+
+        # 随机初始化聚类中心
+        indices = np.random.choice(len(pred_data), self.n_clusters, replace=False)
+        self.pred_centers = pred_data[indices]
+        self.centers = data[indices]
+
+        for _ in range(self.max_iter):
+            # 计算余弦相似度
+            similarities = cosine_similarity(pred_data, self.pred_centers)
+            
+            # 分配样本到最近的聚类中心
+            labels = np.argmax(similarities, axis=1)
+
+            # 更新聚类中心
+            new_centers = np.array([data[labels == i].mean(axis=0) for i in range(self.n_clusters) if len(data[labels == i]) > 0])
+            
+            # 检查收敛
+            if len(new_centers) == len(self.centers) and np.all(np.linalg.norm(new_centers - self.centers, axis=1) < self.tol):
+                break
+
+            self.centers = new_centers
+
+        return labels, self.centers
 
 class CenterSkeletonGenerator:
     """SkeletonGenerator except allows for generate skeleton"""
@@ -290,7 +324,7 @@ class CenterSkeletonGenerator:
         self.threshold = threshold
         self.min_cluster = min_cluster
     
-    def gen_center(self,data,k=2):
+    def gen_center(self,data,pred_data,k=2):
         """
         """
         kmeans = KMeans(n_clusters=k)  
@@ -298,6 +332,8 @@ class CenterSkeletonGenerator:
         centers = kmeans.cluster_centers_
         labels = kmeans.labels_
         radii = []
+        # kmeans = CosineKMeans(n_clusters=3)
+        # labels, centers = kmeans.fit(data,pred_data)
         for i in range(k):
             cluster_data = data[labels == i]
             if len(cluster_data) > 0:
@@ -358,63 +394,105 @@ class CenterSkeletonGenerator:
             return float('inf')
 
         return min(inter_cluster_distances) / max_intra_cluster_distance
+    
+    def recursive_clustering(self, data, pred_data,k=2, current_index=0, cluster_indices=None, original_indices=None):
+        if cluster_indices is None:
+            cluster_indices = np.zeros(data.shape[0], dtype=int)
+            original_indices = np.arange(data.shape[0])
 
-    
-    # def if_need_split(self, data):
-    #     if len(data) < self.min_cluster:
-    #         return False
-    #     kmeans = KMeans(n_clusters=1)  
-    #     kmeans.fit(data)
-    #     centers = kmeans.cluster_centers_
-    #     center = centers[0]
-    #     train_data_distances = np.sqrt(((data - center)**2).sum(axis=1))
-    #     pred = self.data_provider.get_pred(self.epoch,np.concatenate((data,centers),axis=0))
-    #     distance_condition = np.any(train_data_distances > self.distance_condition_val)
-    #     variance_condition = np.any(np.var(pred, axis=0) > self.variance_condition_val)
-    #     return distance_condition or variance_condition
-    
-    def recursive_clustering(self, data,k=2):
-        centers, labels, radii = self.gen_center(data, k=k)
-        all_centers = list(centers)  # Save intermediate centers
+        centers, labels, radii = self.gen_center(data, pred_data, k=k)
+        all_centers = list(centers)
         all_radii = list(radii)
-    
+        # next_index = current_index + 1
+        next_index = current_index  # 从当前索引开始
+
         for label in set(labels):
-            cluster = data[labels == label]
-            if len(cluster):
-                if self.if_need_split(cluster):
-                    # all_centers.extend(self.recursive_clustering(cluster, k=2))
-                    sub_centers, sub_radii = self.recursive_clustering(cluster, k=2)
+            cluster_mask = (labels == label)
+            cluster_data = data[cluster_mask]
+            cluster__pred_data = pred_data[cluster_mask]
+            cluster_original_indices = original_indices[cluster_mask]
+            if len(cluster_data):
+                if self.if_need_split(cluster_data):
+                    sub_centers, sub_radii, used_index = self.recursive_clustering(
+                        cluster_data,cluster__pred_data, k=2, current_index=next_index,
+                        cluster_indices=cluster_indices, 
+                        original_indices=cluster_original_indices
+                    )
                     all_centers.extend(sub_centers)
                     all_radii.extend(sub_radii)
-            
-        return all_centers, all_radii
-    
+                    next_index = used_index 
+                else:
+                    cluster_indices[cluster_original_indices] = next_index
+                    next_index += 1
+                    # print("current_index",next_index)
+
+        return all_centers, all_radii, next_index
+
+    def gen_first_level_centers(self, data, pred_data, k=10):
+        pred = pred_data.argmax(axis=1)
+        centers = []
+
+        radii = []
+
+        for i in range(k):
+            # Find the indices of data points in the current cluster
+            indices = np.where(pred == i)[0]
+
+            # Calculate the mean (center) of these points
+            cluster_center = data[indices].mean(axis=0)
+            centers.append(cluster_center)
+
+            # Calculate the radius of the cluster
+            if len(indices) > 0:
+                distances = np.linalg.norm(data[indices] - cluster_center, axis=1)
+                cluster_radius = distances.max()
+            else:
+                cluster_radius = 0
+
+            radii.append(cluster_radius)
+        return centers, pred, radii
+        
+
     
     def center_skeleton_genertaion(self):
         # Initial centers
         data = self.data_provider.train_representation(self.epoch)
         data = data.reshape(data.shape[0], data.shape[1])
+        pred_data = self.data_provider.get_pred(self.epoch, data)
+
+        next_index = 0  # 从当前索引开始
 
         # pca = PCA(n_components=2)
         # data = pca.fit_transform(data)
 
         # pca = PCA(n_components=2)
         # data = pca.fit_transform(data)
-        centers_c, _, radii_c = self.gen_center(data,k=1)
-        centers_n, labels,radii_n = self.gen_center(data,k=10)
+        centers_c, _, radii_c = self.gen_center(data,pred_data,k=1)
+        centers_n, labels,radii_n = self.gen_first_level_centers(data,pred_data,k=10)
         print("finished init, start generate proxy")
 
         # Recursive clustering
         # Recursive clustering with initial split into 10 clusters
         all_centers = []
         all_radii = []  # 存储所有簇的最大半径
+        cluster_indices = np.zeros(data.shape[0], dtype=int)
         for label in range(len(labels)):
-            cluster = data[labels == label]
-            if len(cluster):
-                # all_centers.extend(self.recursive_clustering(cluster, k=2))
-                sub_centers, sub_radii = self.recursive_clustering(cluster, k=2)
+            # print("llllabel")
+            cluster_mask = (labels == label)
+            cluster_data = data[cluster_mask]
+            cluster_pred_data = pred_data[cluster_mask]
+            cluster_original_indices = np.where(cluster_mask)[0]
+            if len(cluster_data):
+                sub_centers, sub_radii, used_index = self.recursive_clustering(
+                    cluster_data, cluster_pred_data,k=2, current_index=next_index,
+                    cluster_indices=cluster_indices, 
+                    original_indices=cluster_original_indices
+                  
+                )
+                
                 all_centers.extend(sub_centers)
                 all_radii.extend(sub_radii)
+                next_index = used_index
             
         all_centers = np.array(all_centers)
         all_radii = np.array(all_radii)
@@ -423,7 +501,7 @@ class CenterSkeletonGenerator:
         # centers = pca.inverse_transform(centers)
 
                                           
-        return centers,np.concatenate((radii_c, radii_n, all_radii), axis=0)
+        return centers,np.concatenate((radii_c, radii_n, all_radii), axis=0), cluster_indices
     
 
 
