@@ -6,6 +6,8 @@ import time
 import math
 import json
 
+from scipy.stats import rankdata
+
 from umap.umap_ import fuzzy_simplicial_set, make_epochs_per_sample
 from pynndescent import NNDescent
 from sklearn.neighbors import NearestNeighbors
@@ -436,8 +438,19 @@ class Trustvis_SpatialEdgeConstructor(SpatialEdgeConstructor):
             # # print("weight",weight)
 
             # # weight = weight * pred_similarity
-            pred_probs= np.where(probs == 1, 1, probs + (1 - probs) * pred_similarity ** 2)
+            #TODO strategy 1
+            # pred_probs= np.where(probs == 1, 1, probs + (1 - probs) * pred_similarity ** 2)
+            #TODO strategy 2
+            # step: get ranked data with evenly distributed
+            rank_transformed_weights = rankdata(probs, method='average') / len(probs)
+            # step: recalculate the wij
+            # pred_probs= np.where(rank_transformed_weights == 1, 1, rank_transformed_weights + (1- rank_transformed_weights)* rank_transformed_weights * pred_similarity)
+            #TODO strategy 3
+            # step: recalculate the wij
+            pred_probs = np.where(rank_transformed_weights == 1,1,np.where(pred_similarity < 0, rank_transformed_weights * (1 + pred_similarity),rank_transformed_weights + (1 - rank_transformed_weights) * rank_transformed_weights * pred_similarity))
 
+            
+            
             # weight = np.where(weight == 1, 1, np.where(weight <= 1e-3, weight, weight + (1 - weight) * pred_similarity ** 2))
   
             pred_model = self.data_provider.prediction_function(self.iteration)

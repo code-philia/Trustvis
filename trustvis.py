@@ -10,7 +10,7 @@ import time
 import numpy as np
 import argparse
 
-from torch.utils.data import DataLoader,ConcatDataset
+from torch.utils.data import DataLoader, ConcatDataset
 from torch.utils.data import WeightedRandomSampler
 from umap.umap_ import find_ab_params
 
@@ -114,7 +114,7 @@ VIS_MODEL_NAME = 'trustvis' ### saved_as VIS_MODEL_NAME.pth
 
 
 # Define hyperparameters
-GPU_ID = 0
+GPU_ID = 1
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
 print("device", DEVICE)
 
@@ -140,7 +140,7 @@ model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 negative_sample_rate = 5
 min_dist = .1
 _a, _b = find_ab_params(1.0, min_dist)
-umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength=1.0)
+
 # Define Projector
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
@@ -155,6 +155,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         temporal_loss_fn = DummyTemporalLoss(DEVICE)
         # recon_loss_fn = ReconstructionPredLoss(data_provider=data_provider,epoch=iteration, beta=1.0)
         recon_loss_fn = ReconstructionLoss(beta=1.0)
+        umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, data_provider, iteration, _a, _b, repulsion_strength=1.0)
         # umap_loss_fn = SementicUmapLoss(negative_sample_rate, DEVICE, data_provider, iteration, _a, _b, repulsion_strength=1.0)
         # recon_loss_fn = ReconstructionPredEdgeLoss(data_provider=data_provider,iteration=iteration, beta=1.0)
         criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
@@ -183,7 +184,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
     edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
     # create non boundary labels
-    np.save('probs_for_epoch{}'.format(iteration), pred_probs)
+    np.save('pred_probs_for_epoch{}'.format(iteration), pred_probs)
+    np.save('probs_for_epoch{}'.format(iteration), probs)
     labels_non_boundary = np.zeros(len(edge_to))
     # create boundary labels
 

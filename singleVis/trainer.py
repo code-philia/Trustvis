@@ -470,11 +470,17 @@ class DVITrainer(SingleVisTrainer):
         umap_losses = []
         recon_losses = []
         temporal_losses = []
+        new_losses = []
 
         t = tqdm(self.edge_loader, leave=True, total=len(self.edge_loader))
-        
+
+        train_data = data_provider.train_representation(iteration)
+        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+
+        recon_train_data = self.model(torch.Tensor(train_data).to(self.DEVICE), torch.Tensor(train_data).to(self.DEVICE))['recon'][0]
+        recon_pred = data_provider.get_pred(iteration, recon_train_data.detach().cpu().numpy())
         for data in t:
-            edge_to, edge_from, a_to, a_from, labels,probs,pred_edge_to, pred_edge_from = data
+            edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from, labels,probs,pred_edge_to, pred_edge_from = data
 
             edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
             edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
@@ -482,8 +488,14 @@ class DVITrainer(SingleVisTrainer):
             a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
             probs = probs.to(device=self.DEVICE, dtype=torch.float32)
 
+            pred_edge_to = pred_edge_to.to(device=self.DEVICE, dtype=torch.float32)
+            pred_edge_from = pred_edge_from.to(device=self.DEVICE, dtype=torch.float32)
+
+            recon_pred_edge_to = torch.Tensor(recon_pred[edge_to_idx]).to(device=self.DEVICE, dtype=torch.float32)
+            recon_pred_edge_from = torch.Tensor(recon_pred[edge_from_idx]).to(device=self.DEVICE, dtype=torch.float32)
+
             # outputs = self.model(edge_to, edge_from)
-            umap_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, probs,pred_edge_to, pred_edge_from )
+            umap_l, new_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, probs,pred_edge_to, pred_edge_from,recon_pred_edge_to,recon_pred_edge_from )
             # + 1 * radius_loss + orthogonal_loss
 
             # + distance_order_loss
@@ -492,6 +504,7 @@ class DVITrainer(SingleVisTrainer):
             # recon_losses.append(recon_l.item())
             # temporal_losses.append(temporal_l.item())
             all_loss.append(loss.mean().item())
+            new_losses.append(new_l.item())
             umap_losses.append(umap_l.item())
             recon_losses.append(recon_l.item())
             temporal_losses.append(temporal_l.mean().item())
@@ -502,9 +515,9 @@ class DVITrainer(SingleVisTrainer):
             self.optimizer.step()
         self._loss = sum(all_loss) / len(all_loss)
         self.model.eval()
-        print('umap:{:.4f}\trecon_l:{:.4f}\ttemporal_l:{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
+        print('umap:{:.4f}\trecon_l:{:.4f}\tnew_loss:{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
                                                                 sum(recon_losses) / len(recon_losses),
-                                                                sum(temporal_losses) / len(temporal_losses),
+                                                                sum(new_losses) / len(new_losses),
                                                                 sum(all_loss) / len(all_loss)))
         return self.loss
     
@@ -636,6 +649,7 @@ class TrustTrainer(SingleVisTrainer):
         self.model.train()
         all_loss = []
         umap_losses = []
+        new_l = []
         recon_losses = []
         temporal_losses = []
         b_losses = []
@@ -661,6 +675,9 @@ class TrustTrainer(SingleVisTrainer):
                 boundary_mask = labels == 1
     
                 boundary_loss = torch.tensor(0.0, device=self.DEVICE)
+
+                pred_edge_to = pred_edge_to.to(device=self.DEVICE, dtype=torch.float32)
+                pred_edge_from = pred_edge_from.to(device=self.DEVICE, dtype=torch.float32)
 
                 # boundary crossing
                 # if boundary_mask.any() and epoch > 6:

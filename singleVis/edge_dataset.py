@@ -112,7 +112,7 @@ class DVIDataHandler(Dataset):
             edge_to = self.transform(edge_to)
             edge_from = Image.fromarray(edge_from)
             edge_from = self.transform(edge_from)
-        return edge_to, edge_from, a_to, a_from, label, probs,edge_to_pred,edge_from_pred
+        return edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from, label, probs,edge_to_pred,edge_from_pred
 
     def __len__(self):
         # return the number of all edges
