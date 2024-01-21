@@ -244,16 +244,22 @@ class UmapLoss(nn.Module):
         recon_loss_from[is_pred_same] = 0
 
        
-        # # 0.4 0.3  0.1 0.2
-        modified_max_loss =  ((recon_loss_to + recon_loss_from) * torch.exp(-(positive_distance**1))).mean()
-        fenzi = (recon_loss_to + recon_loss_from).mean()
+        # # 0.4 0.3  0.1 0.2  0.26  0.0
+
+        recon_pred_to_Res = recon_pred_to.argmax(axis=1)
+        recon_pred_from_Res = recon_pred_from.argmax(axis=1)
+        condition_error = ((recon_pred_to_Res != pred_edge_to_Res) | (recon_pred_from_Res != pred_edge_from_Res))
+        condition_ = (condition_error & (~is_pred_same))
+        modified_max_loss =  ((recon_loss_to[condition_] + recon_loss_from[condition_]) * torch.exp(-(positive_distance[condition_]**1))).mean()
+        # modified_max_loss =  (1 * torch.exp(-(positive_distance[~is_pred_same]**1))).mean()
+        fenzi = (recon_loss_to[condition_] + recon_loss_from[condition_]).mean()
         fenmu = torch.exp(-(positive_distance[~is_pred_same] ** 1)).mean()
-        d = positive_distance[~is_pred_same].mean() 
+        # d = positive_distance[~is_pred_same].mean() 
         # print("prediction loss{} , exp:{},distance:{}".format(fenzi,fenmu,d))
         # modified_max_loss = 100 * (recon_loss_to + recon_loss_from).mean()
         # modified_max_loss = 100 * (1 / (0.01 + 1 * positive_distance[~is_pred_same])).mean()
 
-        print("prediction loss{} , exp:{}, all data distance: {} subset distance:{}".format(fenzi,fenmu,positive_distance.mean(), positive_distance[~is_pred_same].mean()))
+        # print("prediction loss{} , exp:{}, all data distance: {} subset distance:{}".format(fenzi,fenmu,positive_distance.mean(), positive_distance[~is_pred_same].mean()))
         
 
 
