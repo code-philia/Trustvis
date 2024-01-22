@@ -184,14 +184,14 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
     ##### construct the spitial complex
 
-    # spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
-    # edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
-    edge_to = np.load('edge_to_epoch{}.npy'.format(iteration))
-    edge_from = np.load('edge_from_epoch{}.npy'.format(iteration))
-    probs = np.load('probs_epoch{}.npy'.format(iteration))
-    pred_probs = np.load('pred_probs_epoch{}.npy'.format(iteration))
-    feature_vectors = np.load('feature_vectors_epoch{}.npy'.format(iteration))
-    attention = np.load('attention_epoch{}.npy'.format(iteration))
+    spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
+    edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
+    # edge_to = np.load('edge_to_epoch{}.npy'.format(iteration))
+    # edge_from = np.load('edge_from_epoch{}.npy'.format(iteration))
+    # probs = np.load('probs_epoch{}.npy'.format(iteration))
+    # pred_probs = np.load('pred_probs_epoch{}.npy'.format(iteration))
+    # feature_vectors = np.load('feature_vectors_epoch{}.npy'.format(iteration))
+    # attention = np.load('attention_epoch{}.npy'.format(iteration))
 
     # np.save('edge_to_epoch{}'.format(iteration),edge_to)
     # np.save('edge_from_epoch{}'.format(iteration),edge_from)
