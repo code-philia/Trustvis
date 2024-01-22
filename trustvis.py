@@ -187,9 +187,9 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
     #### make wij = wji
     
-    # create non boundary labels
-    np.save('pred_probs_for_epoch{}'.format(iteration), pred_probs)
-    np.save('probs_for_epoch{}'.format(iteration), probs)
+    # # create non boundary labels
+    # np.save('pred_probs_for_epoch{}'.format(iteration), pred_probs)
+    # np.save('probs_for_epoch{}'.format(iteration), probs)
     labels_non_boundary = np.zeros(len(edge_to))
     # create boundary labels
 
