@@ -4,6 +4,8 @@ from torch import nn
 from singleVis.backend import convert_distance_to_probability, compute_cross_entropy
 from scipy.special import softmax
 import torch.nn.functional as F
+import torch.optim as optim
+import os
 
 
         
@@ -136,9 +138,13 @@ class Loss(nn.Module):
 #         indices = np.where(~(condition1 & condition2))[0]
 #         return indices
 
+class MyModel(nn.Module):
+    def __init__(self, initial_tensor):
+        super(MyModel, self).__init__()
+        self.learnable_matrix = nn.Parameter(initial_tensor.clone().detach())
 
 class UmapLoss(nn.Module):
-    def __init__(self, negative_sample_rate, device,  data_provider, epoch, _a=1.0, _b=1.0, repulsion_strength=1.0):
+    def __init__(self, negative_sample_rate, device,  data_provider, epoch, net,  _a=1.0, _b=1.0, repulsion_strength=1.0):
         super(UmapLoss, self).__init__()
 
         self._negative_sample_rate = negative_sample_rate
@@ -148,6 +154,18 @@ class UmapLoss(nn.Module):
         self.DEVICE = torch.device(device)
         self.data_provider = data_provider
         self.epoch = epoch
+        self.net = net
+        self.model_path = os.path.join(self.data_provider.content_path, "Model")
+
+        model_location = os.path.join(self.model_path, "{}_{:d}".format('Epoch', epoch), "subject_model.pth")
+        self.net.load_state_dict(torch.load(model_location, map_location=torch.device("cpu")),strict=False)
+        self.net.to(self.DEVICE)
+        self.net.train()
+
+        for param in net.parameters():
+            param.requires_grad = False
+
+        self.pred_fn = self.net.prediction
 
     @property
     def a(self):
@@ -227,17 +245,17 @@ class UmapLoss(nn.Module):
         # top2_classes_from, top2_indices_from = torch.topk(pred_edge_from[~is_pred_same], 2, dim=1)
 
 
-        # recon_pred_to = recon_pred_edge_to
-        # recon_pred_from =recon_pred_edge_from
-        # temp = 0.001
-        # recon_pred_to_softmax = F.softmax(recon_pred_to / temp, dim=-1)
-        # recon_pred_from_softmax = F.softmax(recon_pred_from / temp, dim=-1)
+        recon_pred_to = recon_pred_edge_to
+        recon_pred_from =recon_pred_edge_from
+        temp = 0.001
+        recon_pred_to_softmax = F.softmax(recon_pred_to / temp, dim=-1)
+        recon_pred_from_softmax = F.softmax(recon_pred_from / temp, dim=-1)
 
-        # pred_to_softmax = F.softmax(pred_edge_to / temp, dim=-1)
-        # pred_from_softmax = F.softmax(pred_edge_from / temp, dim=-1)
+        pred_to_softmax = F.softmax(pred_edge_to / temp, dim=-1)
+        pred_from_softmax = F.softmax(pred_edge_from / temp, dim=-1)
         
-        # recon_pred_to_softmax = torch.Tensor(recon_pred_to_softmax.to(self.DEVICE))
-        # recon_pred_from_softmax = torch.Tensor(recon_pred_from_softmax.to(self.DEVICE))
+        recon_pred_to_softmax = torch.Tensor(recon_pred_to_softmax.to(self.DEVICE))
+        recon_pred_from_softmax = torch.Tensor(recon_pred_from_softmax.to(self.DEVICE))
         
 
         # recon_loss_to = torch.mean(torch.pow(pred_to_softmax - recon_pred_to_softmax, 2),1)
@@ -333,6 +351,17 @@ class UmapLoss(nn.Module):
         )  
 
 
+    
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -340,7 +369,9 @@ class UmapLoss(nn.Module):
 
         # initial_tensor = torch.zeros(2000)
         init_margin = (1.0 - is_pred_same.float()) * batch_margin
-        print("init_margin", init_margin[~is_pred_same].mean())
+        # print("init_margin", init_margin[~is_pred_same].mean())
+
+        print(init_margin[~is_pred_same].mean().item())
 
 
                
@@ -348,9 +379,13 @@ class UmapLoss(nn.Module):
                                                       edge_to[~is_pred_same],edge_from[~is_pred_same], probs[~is_pred_same],
                                                       embedding_to[~is_pred_same],embedding_from[~is_pred_same],curr_model,
                                                       pred_edge_to_Res[~is_pred_same],pred_edge_to_Res[~is_pred_same],
-                                                      recon_pred_to_Res[~is_pred_same], recon_pred_from_Res[~is_pred_same])
-        # print("margin",margin.mean())
-        print("dynamic marin", margin[~is_pred_same].mean())
+                                                      recon_pred_to_Res[~is_pred_same], recon_pred_from_Res[~is_pred_same],pred_from_softmax[~is_pred_same],positive_distance_mean,negative_distance_mean)
+        
+        print(margin[~is_pred_same].mean().item())
+        print(positive_distance.mean().item(), positive_distance[~is_pred_same].mean().item())
+
+        # print("dynamic marin", margin[~is_pred_same].mean())
+        # print("margin", margin.mean().item())
         margin_loss = F.relu(margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
         
         umap_l = torch.mean(ce_loss).to(self.DEVICE) 
@@ -379,7 +414,7 @@ class UmapLoss(nn.Module):
         indices = np.where(~(condition1 & condition2))[0]
         return indices
     
-    def newton_step_with_regularization(self, dynamic_margin, is_pred_same, edge_to, edge_from, probs, emb_to, emb_from, curr_model, pred_edge_to_Res, pred_edge_from_Res, recon_pred_to_Res,recon_pred_from_Res, epsilon=1e-4):
+    def newton_step_with_regularization(self, dynamic_margin, is_pred_same, edge_to, edge_from, probs, emb_to, emb_from, curr_model, pred_edge_to_Res, pred_edge_from_Res, recon_pred_to_Res,recon_pred_from_Res,pred_from_softmax, positive_distance_mean, negative_distance_mean, epsilon=1e-4):
         # Ensure the input tensors require gradient
         for tensor in [edge_to, edge_from, emb_to, emb_from]:
             tensor.requires_grad_(True)
@@ -408,11 +443,75 @@ class UmapLoss(nn.Module):
 
 
         # learning rate估算 下一次放的位置 y*
-        next_emb_to = emb_to - 0.01 * grad
+        next_emb_to = emb_to - 1 * grad
         next_emb_from = emb_from - 0.01 * grad_emb_from
 
         # learning rate估算 取上一次
         prev_emb_to = emb_to + 0.01 * grad
+
+        ##### init matrix 【 210 * 2 】yi = y * 
+
+        # 假设 next_emb_to 的形状为 (m, n)
+        # metrix = MyModel(next_emb_to)
+
+        # # 打印可学习矩阵的初始值，它应与 next_emb_to 相同
+        # print(metrix.learnable_matrix)
+
+        # metrix = torch.tensor(next_emb_to, requires_grad=True)
+        # # 将next_emb_to转换为一个可求导的张量
+        metrix = torch.tensor(next_emb_to, dtype=torch.float, requires_grad=True)
+
+        for param in curr_model.parameters():
+            param.requires_grad = False
+
+
+        # loss = pred_from_softmax - torch.mean(torch.pow(pred_from_softmax - F.softmax(inv / 0.01, dim=-1), 2),1)
+        optimizer = optim.Adam([metrix], lr=0.01)
+        # 训练循环
+        for epoch in range(100):
+            optimizer.zero_grad() 
+            inv = curr_model.decoder(metrix) 
+            inv_pred = self.pred_fn(inv)
+            # inv_pred = torch.tensor(inv_pred, dtype=torch.float, device=self.DEVICE, requires_grad=True)
+            # # 计算损失
+            inv_pred_to_softmax = F.softmax(inv_pred / 0.001, dim=-1)                                             # 
+            loss = 10 * torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2)) + torch.mean(torch.pow(inv - edge_from, 2))
+            # bp
+            loss.backward(retain_graph=True)         
+            optimizer.step()
+            # if epoch % 500 == 0:
+                # print(f'Epoch {epoch}, Loss: {loss.item()}')
+
+        # 计算 emb_to 和 metrix 之间的差异
+        difference = emb_to - metrix
+
+        # 计算差异的范数（例如，使用L2范数）
+        # margin = torch.norm(difference, p=2, dim=1) 
+       
+        margin = torch.norm(emb_to - metrix, dim=1)
+        # margin = torch.where(margin < 0.1, torch.full_like(margin, positive_distance_mean), margin)
+        margin = torch.where(margin < positive_distance_mean.item(), dynamic_margin[~is_pred_same], margin)
+        margin = torch.where(margin > negative_distance_mean.item(), dynamic_margin[~is_pred_same], margin)
+
+        
+
+        
+
+        # 输出平均margin
+        # print("margin", margin.mean().item())
+        # print("margin",margin.mean())
+
+        for param in curr_model.parameters():
+            param.requires_grad = True
+
+        dynamic_margin[~is_pred_same] = margin.to(self.DEVICE)
+
+    
+
+
+
+        
+        
 
 
 
@@ -422,55 +521,39 @@ class UmapLoss(nn.Module):
        
   
 
-        combined_samples = torch.cat((next_emb_to, next_emb_from), dim=0)
-        recon_next = curr_model.decoder(combined_samples)
-        recon_next_pred = self.data_provider.get_pred(self.epoch, recon_next.cpu().detach().numpy(), 0).argmax(axis=1)
-        recon_to_next_pred, recon_from_next_pred = np.split(recon_next_pred, 2, axis=0)
-        recon_to_next_pred = torch.Tensor(recon_to_next_pred).to(self.DEVICE)
-        recon_from_next_pred = torch.Tensor(recon_from_next_pred).to(self.DEVICE)
+        # combined_samples = torch.cat((next_emb_to, next_emb_from), dim=0)
+        # recon_next = curr_model.decoder(combined_samples)
+        # recon_next_pred = self.data_provider.get_pred(self.epoch, recon_next.cpu().detach().numpy(), 0).argmax(axis=1)
+        # recon_to_next_pred, recon_from_next_pred = np.split(recon_next_pred, 2, axis=0)
+        # recon_to_next_pred = torch.Tensor(recon_to_next_pred).to(self.DEVICE)
+        # recon_from_next_pred = torch.Tensor(recon_from_next_pred).to(self.DEVICE)
 
 
 
-        margin = dynamic_margin
+        # margin = dynamic_margin
        
-        condition_ij_right = (recon_pred_to_Res == pred_edge_to_Res) & (recon_pred_from_Res == pred_edge_from_Res)
+        # condition_ij_right = (recon_pred_to_Res == pred_edge_to_Res) & (recon_pred_from_Res == pred_edge_from_Res)
 
-        # # if yi 和 yi_next && yj and yi_next have correct inverse prediction 
-        condition = (recon_to_next_pred == pred_edge_to_Res)  & (recon_from_next_pred == pred_edge_from_Res) & condition_ij_right
-        margin[~is_pred_same][condition] = 0
+        # # # if yi 和 yi_next && yj and yj_next have correct inverse prediction 
+        # condition = (recon_to_next_pred == pred_edge_to_Res)  & (recon_from_next_pred == pred_edge_from_Res) & condition_ij_right
+        # margin[~is_pred_same][condition] = 0
         
 
-        # 如果 基于现在 继续向前拉肯定会错，就把现在的两个点的距离作为 margin
-        distance = (torch.norm(emb_from - emb_to, dim=1)) ** 2
+        # # 如果 基于现在 继续向前拉肯定会错，就把现在的两个点的距离作为 margin
+        # distance = (torch.norm(emb_from - emb_to, dim=1)) ** 2
 
-        #### 当前 yi 和 yi pred 正确，但是 yi_next会被预测称j 类，或者  yj_next会被预测称i 类，那他们的margin就停在此刻。
-        condition_2 = (condition_ij_right & (recon_to_next_pred == pred_edge_from_Res) )  | (condition_ij_right & (recon_from_next_pred == pred_edge_to_Res))
-        # margin[(recon_next_pred == pred_edge_to_Res) & (recon_pred_to_Res == pred_edge_to_Res)] = 0
-        margin[~is_pred_same][condition_2] = distance[condition_2].to(self.DEVICE)
+        # #### 当前 yi 和 yi pred 正确，但是 yi_next会被预测称j 类，或者  yj_next会被预测称i 类，那他们的margin就停在此刻。
+        # condition_2 = (condition_ij_right & (recon_to_next_pred == pred_edge_from_Res) )  | (condition_ij_right & (recon_from_next_pred == pred_edge_to_Res))
+        # # margin[(recon_next_pred == pred_edge_to_Res) & (recon_pred_to_Res == pred_edge_to_Res)] = 0
+        # margin[~is_pred_same][condition_2] = distance[condition_2].to(self.DEVICE)
 
-        print(torch.sum(condition),torch.sum(condition_2))
         
 
-        # Compute Hessian matrix
-        # The Hessian should be a square matrix of shape [num_params, num_params]
-        # num_params = torch.numel(emb_to)
-        # hessian = torch.zeros(num_params, num_params, dtype=emb_to.dtype, device=emb_to.device)
-        # for idx in range(num_params):
-        #     # Compute gradient of each component of the gradient vector
-        #     grad_component = grad.reshape(-1)[idx]
-        #     grad2 = torch.autograd.grad(grad_component, emb_to, retain_graph=True)[0].reshape(-1)
-        #     hessian[idx] = grad2
+        # print(torch.sum(condition),torch.sum(condition_2))
+        
 
-        # # Add regularization to the diagonal of the Hessian
-        # regularized_hessian = hessian + epsilon * torch.eye(num_params, dtype=hessian.dtype, device=hessian.device)
 
-        # # Invert the regularized Hessian
-        # regularized_hessian_inv = torch.inverse(regularized_hessian)
-
-        # # Perform Newton step
-        # newton_step = -torch.matmul(regularized_hessian_inv, grad.reshape(-1, 1)).squeeze(1).reshape_as(emb_to)
-
-        return margin
+        return dynamic_margin
 
 
 class DVILoss(nn.Module):

@@ -352,7 +352,9 @@ class NormalDataProvider(DataProvider):
         '''
         prediction_func = self.prediction_function(epoch)
 
-        data = torch.from_numpy(data)
+        if isinstance(data, np.ndarray):
+            data = torch.from_numpy(data)  # 如果不是NumPy数组，则转换为NumPy数组
+
         data = data.to(self.DEVICE)
         pred = batch_run(prediction_func, data, verbose)
         return pred
