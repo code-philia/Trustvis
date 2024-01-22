@@ -340,6 +340,7 @@ class UmapLoss(nn.Module):
 
         # initial_tensor = torch.zeros(2000)
         init_margin = (1.0 - is_pred_same.float()) * batch_margin
+        print("init_margin", init_margin[~is_pred_same].mean())
 
 
                
@@ -349,7 +350,7 @@ class UmapLoss(nn.Module):
                                                       pred_edge_to_Res[~is_pred_same],pred_edge_to_Res[~is_pred_same],
                                                       recon_pred_to_Res[~is_pred_same], recon_pred_from_Res[~is_pred_same])
         # print("margin",margin.mean())
-        print("init_margin and dynamic marin", init_margin[~is_pred_same].mean(), margin[[~is_pred_same]].mean())
+        print("dynamic marin", margin[~is_pred_same].mean())
         margin_loss = F.relu(margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
         
         umap_l = torch.mean(ce_loss).to(self.DEVICE) 
@@ -429,24 +430,15 @@ class UmapLoss(nn.Module):
         recon_from_next_pred = torch.Tensor(recon_from_next_pred).to(self.DEVICE)
 
 
-        # distance = (torch.norm(next_emb_to - emb_to, dim=1)) ** 2
-
-        # # 原始分配较大的 margin
-        # margin =  torch.full((len(emb_to),), 3)
-        # margin = margin.float()
-        # margin = margin.to(self.DEVICE)
 
         margin = dynamic_margin
-        # filtered_margin = margin[~is_pred_same]
-
-        # inverse回高维，如果 y正确 y* 预测错了（出现vis error）就认为当前 || y* - y || 是margin
-        # bool_idx = (recon_pred_to_Res == pred_edge_to_Res) & (recon_next_pred != pred_edge_to_Res)
-        # margin[bool_idx] = distance[bool_idx].to(self.DEVICE)
+       
         condition_ij_right = (recon_pred_to_Res == pred_edge_to_Res) & (recon_pred_from_Res == pred_edge_from_Res)
 
         # # if yi 和 yi_next && yj and yi_next have correct inverse prediction 
         condition = (recon_to_next_pred == pred_edge_to_Res)  & (recon_from_next_pred == pred_edge_from_Res) & condition_ij_right
         margin[~is_pred_same][condition] = 0
+        
 
         # 如果 基于现在 继续向前拉肯定会错，就把现在的两个点的距离作为 margin
         distance = (torch.norm(emb_from - emb_to, dim=1)) ** 2
@@ -456,23 +448,8 @@ class UmapLoss(nn.Module):
         # margin[(recon_next_pred == pred_edge_to_Res) & (recon_pred_to_Res == pred_edge_to_Res)] = 0
         margin[~is_pred_same][condition_2] = distance[condition_2].to(self.DEVICE)
 
-        # # 检测 margin 中的 NaN 值
-        # nan_mask = torch.isnan(margin)
-
-        # # 将 NaN 值替换为 0
-        # margin = torch.where(nan_mask, torch.zeros_like(margin), margin)
+        print(torch.sum(condition),torch.sum(condition_2))
         
-
-
-
-
-
-
-
-
-
-
-
 
         # Compute Hessian matrix
         # The Hessian should be a square matrix of shape [num_params, num_params]
