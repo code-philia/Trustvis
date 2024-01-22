@@ -22,7 +22,6 @@ from singleVis.trainer import DVITrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
 from singleVis.spatial_edge_constructor import Trustvis_SpatialEdgeConstructor
-# from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
 
 from singleVis.projector import DVIProjector
 from singleVis.utils import find_neighbor_preserving_rate
