@@ -450,7 +450,7 @@ class DVITrainer(SingleVisTrainer):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
     
     
-    def train_step(self,data_provider,iteration):
+    def train_step(self,data_provider,iteration,epoch):
         
         projector = PROCESSProjector(self.model, data_provider.content_path, '', self.DEVICE)
         evaluator = Evaluator(data_provider, projector)
@@ -472,7 +472,7 @@ class DVITrainer(SingleVisTrainer):
 
         recon_train_data = self.model(torch.Tensor(train_data).to(self.DEVICE), torch.Tensor(train_data).to(self.DEVICE))['recon'][0]
         recon_pred = data_provider.get_pred(iteration, recon_train_data.detach().cpu().numpy())
-        
+
         for data in t:
             edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from, labels,probs,pred_edge_to, pred_edge_from = data
 
@@ -489,7 +489,7 @@ class DVITrainer(SingleVisTrainer):
             recon_pred_edge_from = torch.Tensor(recon_pred[edge_from_idx]).to(device=self.DEVICE, dtype=torch.float32)
 
             # outputs = self.model(edge_to, edge_from)
-            umap_l, new_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, probs,pred_edge_to, pred_edge_from,recon_pred_edge_to,recon_pred_edge_from )
+            umap_l, new_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, probs,pred_edge_to, pred_edge_from,recon_pred_edge_to,recon_pred_edge_from,epoch )
             # + 1 * radius_loss + orthogonal_loss
 
             # + distance_order_loss
@@ -536,7 +536,7 @@ class DVITrainer(SingleVisTrainer):
         for epoch in range(MAX_EPOCH_NUMS):
             print("====================\nepoch:{}\n===================".format(epoch+1))
             prev_loss = self.loss
-            loss = self.train_step(data_provider, iteration)
+            loss = self.train_step(data_provider, iteration,epoch)
             self.lr_scheduler.step()
             # early stop, check whether converge or not
             if prev_loss - loss < 5E-3:

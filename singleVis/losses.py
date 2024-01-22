@@ -175,7 +175,7 @@ class UmapLoss(nn.Module):
     def b(self):
         return self._b[0]
 
-    def forward(self, embedding_to, embedding_from, probs, pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from,curr_model):
+    def forward(self, embedding_to, embedding_from, probs, pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from,curr_model,iteration):
         batch_size = embedding_to.shape[0]
         # get negative samples
         embedding_neg_to = torch.repeat_interleave(embedding_to, self._negative_sample_rate, dim=0)
@@ -371,18 +371,20 @@ class UmapLoss(nn.Module):
         init_margin = (1.0 - is_pred_same.float()) * batch_margin
         # print("init_margin", init_margin[~is_pred_same].mean())
 
-        print(init_margin[~is_pred_same].mean().item())
+        # print(init_margin[~is_pred_same].mean().item())
 
-
-               
-        margin = self.newton_step_with_regularization(init_margin, is_pred_same, 
+        if iteration > 5:
+            margin = self.newton_step_with_regularization(init_margin, is_pred_same, 
                                                       edge_to[~is_pred_same],edge_from[~is_pred_same], probs[~is_pred_same],
                                                       embedding_to[~is_pred_same],embedding_from[~is_pred_same],curr_model,
                                                       pred_edge_to_Res[~is_pred_same],pred_edge_to_Res[~is_pred_same],
                                                       recon_pred_to_Res[~is_pred_same], recon_pred_from_Res[~is_pred_same],pred_from_softmax[~is_pred_same],positive_distance_mean,negative_distance_mean)
+        else:
+            margin = init_margin
         
-        print(margin[~is_pred_same].mean().item())
-        print(positive_distance.mean().item(), positive_distance[~is_pred_same].mean().item())
+        print(margin[~is_pred_same].mean().item(),positive_distance.mean().item(), positive_distance[~is_pred_same].mean().item())
+        
+        
 
         # print("dynamic marin", margin[~is_pred_same].mean())
         # print("margin", margin.mean().item())
@@ -444,10 +446,10 @@ class UmapLoss(nn.Module):
 
         # learning rate估算 下一次放的位置 y*
         next_emb_to = emb_to - 1 * grad
-        next_emb_from = emb_from - 0.01 * grad_emb_from
+        next_emb_from = emb_from - 1 * grad_emb_from
 
         # learning rate估算 取上一次
-        prev_emb_to = emb_to + 0.01 * grad
+        # prev_emb_to = emb_to + 0.01 * grad
 
         ##### init matrix 【 210 * 2 】yi = y * 
 
@@ -459,7 +461,14 @@ class UmapLoss(nn.Module):
 
         # metrix = torch.tensor(next_emb_to, requires_grad=True)
         # # 将next_emb_to转换为一个可求导的张量
-        metrix = torch.tensor(next_emb_to, dtype=torch.float, requires_grad=True)
+        """
+        strategy 1: gen y* from yi, and then push y* to yj then calculate || y*-yi || 
+        strategy 2: gen y* from yj, and then pull y* to yi then calculate || y*-yi || 
+        """
+        # strategy 1
+        # metrix = torch.tensor(next_emb_to, dtype=torch.float, requires_grad=True)
+        # strategy 2
+        metrix = torch.tensor(next_emb_from, dtype=torch.float, requires_grad=True)
 
         for param in curr_model.parameters():
             param.requires_grad = False
@@ -468,17 +477,25 @@ class UmapLoss(nn.Module):
         # loss = pred_from_softmax - torch.mean(torch.pow(pred_from_softmax - F.softmax(inv / 0.01, dim=-1), 2),1)
         optimizer = optim.Adam([metrix], lr=0.01)
         # 训练循环
-        for epoch in range(100):
+        for epoch in range(5):
             optimizer.zero_grad() 
             inv = curr_model.decoder(metrix) 
             inv_pred = self.pred_fn(inv)
             # inv_pred = torch.tensor(inv_pred, dtype=torch.float, device=self.DEVICE, requires_grad=True)
             # # 计算损失
-            inv_pred_to_softmax = F.softmax(inv_pred / 0.001, dim=-1)                                             # 
-            loss = 10 * torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2)) + torch.mean(torch.pow(inv - edge_from, 2))
+            inv_pred_to_softmax = F.softmax(inv_pred / 0.001, dim=-1)
+            # strategy 1
+            # loss = 10 * torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2)) + torch.mean(torch.pow(inv - edge_from, 2))
+            # strategy 2                                             # 
+            loss = 10 * torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2)) + torch.mean(torch.pow(inv - edge_from, 2)) + 0.1 * torch.mean(torch.pow(emb_to - metrix, 2))
+            
             # bp
             loss.backward(retain_graph=True)         
             optimizer.step()
+
+            # if loss.item() < 0.1:
+            #     print(f"Stopping early at epoch {epoch} as loss dropped below 0.1")
+            #     break
             # if epoch % 500 == 0:
                 # print(f'Epoch {epoch}, Loss: {loss.item()}')
 
@@ -491,7 +508,7 @@ class UmapLoss(nn.Module):
         margin = torch.norm(emb_to - metrix, dim=1)
         # margin = torch.where(margin < 0.1, torch.full_like(margin, positive_distance_mean), margin)
         margin = torch.where(margin < positive_distance_mean.item(), dynamic_margin[~is_pred_same], margin)
-        margin = torch.where(margin > negative_distance_mean.item(), dynamic_margin[~is_pred_same], margin)
+        # margin = torch.where(margin > negative_distance_mean.item(), dynamic_margin[~is_pred_same], margin)
 
         
 
@@ -566,7 +583,7 @@ class DVILoss(nn.Module):
         self.lambd2 = lambd2
         self.device = device
 
-    def forward(self, edge_to, edge_from, a_to, a_from, curr_model,probs,pred_edge_to, pred_edge_from,recon_pred_edge_to,recon_pred_edge_from):
+    def forward(self, edge_to, edge_from, a_to, a_from, curr_model,probs,pred_edge_to, pred_edge_from,recon_pred_edge_to,recon_pred_edge_from,iteration):
       
         outputs = curr_model( edge_to, edge_from)
         embedding_to, embedding_from = outputs["umap"]
@@ -576,7 +593,7 @@ class DVILoss(nn.Module):
         # TODO stop gradient edge_to_ng = edge_to.detach().clone()
 
         recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from, a_to, a_from).to(self.device)
-        umap_l,new_l,total_l = self.umap_loss(embedding_to, embedding_from, probs,pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from, curr_model)
+        umap_l,new_l,total_l = self.umap_loss(embedding_to, embedding_from, probs,pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from, curr_model,iteration)
         temporal_l = self.temporal_loss(curr_model).to(self.device)
 
         loss = total_l + self.lambd1 * recon_l + self.lambd2 * temporal_l
