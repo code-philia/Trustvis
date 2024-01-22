@@ -132,14 +132,16 @@ if PREPROCESS:
     if B_N_EPOCHS >0:
         data_provider._estimate_boundary(LEN // 10, l_bound=L_BOUND)
 
-# Define visualization models
-model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
 
 # Define Losses
 negative_sample_rate = 5
 min_dist = .1
 _a, _b = find_ab_params(1.0, min_dist)
+
+# Define visualization models
+model = VisModel(ENCODER_DIMS, DECODER_DIMS)
+
 
 # Define Projector
 projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)

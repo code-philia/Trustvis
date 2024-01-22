@@ -472,6 +472,7 @@ class DVITrainer(SingleVisTrainer):
 
         recon_train_data = self.model(torch.Tensor(train_data).to(self.DEVICE), torch.Tensor(train_data).to(self.DEVICE))['recon'][0]
         recon_pred = data_provider.get_pred(iteration, recon_train_data.detach().cpu().numpy())
+        
         for data in t:
             edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from, labels,probs,pred_edge_to, pred_edge_from = data
 

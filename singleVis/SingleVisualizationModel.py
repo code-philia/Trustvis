@@ -1,4 +1,6 @@
 from torch import nn
+import torch
+from singleVis.backend import compute_cross_entropy,convert_distance_to_probability
 
 
 class SingleVisualizationModel(nn.Module):
@@ -78,6 +80,9 @@ class VisModel(nn.Module):
 
 
     def forward(self, edge_to, edge_from):
+
+        edge_to.requires_grad_()
+        edge_from.requires_grad_()
         outputs = dict()
         embedding_to = self.encoder(edge_to)
         embedding_from = self.encoder(edge_from)
@@ -86,8 +91,10 @@ class VisModel(nn.Module):
         
         outputs["umap"] = (embedding_to, embedding_from)
         outputs["recon"] = (recon_to, recon_from)
+        
 
         return outputs
+    
 
 
 '''

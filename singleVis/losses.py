@@ -157,7 +157,7 @@ class UmapLoss(nn.Module):
     def b(self):
         return self._b[0]
 
-    def forward(self, embedding_to, embedding_from, probs, pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from):
+    def forward(self, embedding_to, embedding_from, probs, pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from,curr_model):
         batch_size = embedding_to.shape[0]
         # get negative samples
         embedding_neg_to = torch.repeat_interleave(embedding_to, self._negative_sample_rate, dim=0)
@@ -199,16 +199,9 @@ class UmapLoss(nn.Module):
 
         # condition_ = (condition_error & (~is_pred_same))
 
-        batch_margin = positive_distance_mean +  (negative_distance_mean - positive_distance_mean) * (1-probs)
-
-        # print(probs.mean(), probs[~is_pred_same].mean())
-
-        dynamic_margin = (1.0 - is_pred_same.float()) * batch_margin
-        # dynamic_margin = (1.0 - is_pred_same.float()) * torch.ones(batch_size).to(self.DEVICE) * 100
-        # dynamic_margin = condition_ * batch_margin
-
-        # max (0, [m1,m2 .... mn] - [d1,d2 ... dn]) 1,2,3
-        margin_loss = F.relu(dynamic_margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
+        # batch_margin = positive_distance_mean +  (negative_distance_mean - positive_distance_mean) * (1-probs)
+        # dynamic_margin = (1.0 - is_pred_same.float()) * batch_margin
+        # margin_loss = F.relu(dynamic_margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
 
         # print(positive_distance.mean(), positive_distance[~is_pred_same].mean(), positive_distance[condition_].mean())
 
@@ -320,6 +313,7 @@ class UmapLoss(nn.Module):
         probabilities_distance = probabilities_distance.to(self.DEVICE)
         #TODO
 
+
         # probabilities_distance[~is_pred_same] +=0.2
  
         # probabilities_distance = torch.clamp(probabilities_distance, min=0, max=1)
@@ -337,37 +331,39 @@ class UmapLoss(nn.Module):
             probabilities_distance,
             repulsion_strength=self._repulsion_strength,
         )  
+
+
+
+
+
+        batch_margin = positive_distance_mean +  (negative_distance_mean - positive_distance_mean) * (1-probs)
+
+        # initial_tensor = torch.zeros(2000)
+        init_margin = (1.0 - is_pred_same.float()) * batch_margin
+
+
+               
+        margin = self.newton_step_with_regularization(init_margin, is_pred_same, 
+                                                      edge_to[~is_pred_same],edge_from[~is_pred_same], probs[~is_pred_same],
+                                                      embedding_to[~is_pred_same],embedding_from[~is_pred_same],curr_model,
+                                                      pred_edge_to_Res[~is_pred_same],pred_edge_to_Res[~is_pred_same],
+                                                      recon_pred_to_Res[~is_pred_same], recon_pred_from_Res[~is_pred_same])
+        # print("margin",margin.mean())
+        print("init_margin and dynamic marin", init_margin[~is_pred_same].mean(), margin[[~is_pred_same]].mean())
+        margin_loss = F.relu(margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
+        
         umap_l = torch.mean(ce_loss).to(self.DEVICE) 
         margin_loss = margin_loss.to(self.DEVICE)
 
-
         if torch.isnan(margin_loss):
             margin_loss = torch.tensor(0.0).to(margin_loss.device)
+        
 
 
 
         # print("umap loss and new loss:",torch.mean(ce_loss), modified_max_loss )
 
         return umap_l, margin_loss, umap_l+margin_loss
-
-    
-    def modify_vector_efficient(v, increase_factor=1.5, decrease_factor=0.5):
-        if len(v) != 10:
-            raise ValueError("The input vector must be 10-dimensional")
-
-        # Convert the input to a numpy array for easier manipulation
-        v = np.array(v)
-
-        # Get indices that would sort the array
-        sorted_indices = np.argsort(v)
-
-        # Apply decrease factor to the smallest 8 values and increase factor to the largest 2
-        v[sorted_indices[:8]] *= decrease_factor
-        v[sorted_indices[-2:]] *= increase_factor
-    
-        return v
-    # TODO softmax tem
-
 
     def filter_neg(self, neg_pred_from, neg_pred_to, delta=1e-1):
         neg_pred_from = neg_pred_from.cpu().detach().numpy()
@@ -381,7 +377,123 @@ class UmapLoss(nn.Module):
         # condition2 = (np.abs(neg_conf_from - neg_conf_to)< delta)
         indices = np.where(~(condition1 & condition2))[0]
         return indices
+    
+    def newton_step_with_regularization(self, dynamic_margin, is_pred_same, edge_to, edge_from, probs, emb_to, emb_from, curr_model, pred_edge_to_Res, pred_edge_from_Res, recon_pred_to_Res,recon_pred_from_Res, epsilon=1e-4):
+        # Ensure the input tensors require gradient
+        for tensor in [edge_to, edge_from, emb_to, emb_from]:
+            tensor.requires_grad_(True)
 
+        # Compute distance embedding
+        distance_embedding = torch.norm(emb_to - emb_from, dim=1)
+
+        # Convert distance to probability
+        probabilities_distance = convert_distance_to_probability(distance_embedding, self.a, self.b)
+
+        # Compute probabilities from the graph
+        probabilities_graph = probs
+
+        # Compute cross entropy loss
+        _, _, ce_loss = compute_cross_entropy(probabilities_graph, probabilities_distance, repulsion_strength=self._repulsion_strength)
+        # print("ce_loss", ce_loss.shape, emb_to.shape)
+
+        # Create a tensor of ones with the same size as ce_loss
+        ones = torch.ones_like(ce_loss)
+
+        # Compute gradient 计算出 下一步umap要如何放y
+        grad = torch.autograd.grad(ce_loss, emb_to, grad_outputs=ones, create_graph=True)[0]
+        # Compute gradient for emb_from
+        grad_emb_from = torch.autograd.grad(ce_loss, emb_from, grad_outputs=ones, create_graph=True)[0]     
+
+
+
+        # learning rate估算 下一次放的位置 y*
+        next_emb_to = emb_to - 0.01 * grad
+        next_emb_from = emb_from - 0.01 * grad_emb_from
+
+        # learning rate估算 取上一次
+        prev_emb_to = emb_to + 0.01 * grad
+
+
+
+       
+
+        
+       
+  
+
+        combined_samples = torch.cat((next_emb_to, next_emb_from), dim=0)
+        recon_next = curr_model.decoder(combined_samples)
+        recon_next_pred = self.data_provider.get_pred(self.epoch, recon_next.cpu().detach().numpy(), 0).argmax(axis=1)
+        recon_to_next_pred, recon_from_next_pred = np.split(recon_next_pred, 2, axis=0)
+        recon_to_next_pred = torch.Tensor(recon_to_next_pred).to(self.DEVICE)
+        recon_from_next_pred = torch.Tensor(recon_from_next_pred).to(self.DEVICE)
+
+
+        # distance = (torch.norm(next_emb_to - emb_to, dim=1)) ** 2
+
+        # # 原始分配较大的 margin
+        # margin =  torch.full((len(emb_to),), 3)
+        # margin = margin.float()
+        # margin = margin.to(self.DEVICE)
+
+        margin = dynamic_margin
+        # filtered_margin = margin[~is_pred_same]
+
+        # inverse回高维，如果 y正确 y* 预测错了（出现vis error）就认为当前 || y* - y || 是margin
+        # bool_idx = (recon_pred_to_Res == pred_edge_to_Res) & (recon_next_pred != pred_edge_to_Res)
+        # margin[bool_idx] = distance[bool_idx].to(self.DEVICE)
+        condition_ij_right = (recon_pred_to_Res == pred_edge_to_Res) & (recon_pred_from_Res == pred_edge_from_Res)
+
+        # # if yi 和 yi_next && yj and yi_next have correct inverse prediction 
+        condition = (recon_to_next_pred == pred_edge_to_Res)  & (recon_from_next_pred == pred_edge_from_Res) & condition_ij_right
+        margin[~is_pred_same][condition] = 0
+
+        # 如果 基于现在 继续向前拉肯定会错，就把现在的两个点的距离作为 margin
+        distance = (torch.norm(emb_from - emb_to, dim=1)) ** 2
+
+        #### 当前 yi 和 yi pred 正确，但是 yi_next会被预测称j 类，或者  yj_next会被预测称i 类，那他们的margin就停在此刻。
+        condition_2 = (condition_ij_right & (recon_to_next_pred == pred_edge_from_Res) )  | (condition_ij_right & (recon_from_next_pred == pred_edge_to_Res))
+        # margin[(recon_next_pred == pred_edge_to_Res) & (recon_pred_to_Res == pred_edge_to_Res)] = 0
+        margin[~is_pred_same][condition_2] = distance[condition_2].to(self.DEVICE)
+
+        # # 检测 margin 中的 NaN 值
+        # nan_mask = torch.isnan(margin)
+
+        # # 将 NaN 值替换为 0
+        # margin = torch.where(nan_mask, torch.zeros_like(margin), margin)
+        
+
+
+
+
+
+
+
+
+
+
+
+
+        # Compute Hessian matrix
+        # The Hessian should be a square matrix of shape [num_params, num_params]
+        # num_params = torch.numel(emb_to)
+        # hessian = torch.zeros(num_params, num_params, dtype=emb_to.dtype, device=emb_to.device)
+        # for idx in range(num_params):
+        #     # Compute gradient of each component of the gradient vector
+        #     grad_component = grad.reshape(-1)[idx]
+        #     grad2 = torch.autograd.grad(grad_component, emb_to, retain_graph=True)[0].reshape(-1)
+        #     hessian[idx] = grad2
+
+        # # Add regularization to the diagonal of the Hessian
+        # regularized_hessian = hessian + epsilon * torch.eye(num_params, dtype=hessian.dtype, device=hessian.device)
+
+        # # Invert the regularized Hessian
+        # regularized_hessian_inv = torch.inverse(regularized_hessian)
+
+        # # Perform Newton step
+        # newton_step = -torch.matmul(regularized_hessian_inv, grad.reshape(-1, 1)).squeeze(1).reshape_as(emb_to)
+
+        return margin
 
 
 class DVILoss(nn.Module):
@@ -395,18 +507,22 @@ class DVILoss(nn.Module):
         self.device = device
 
     def forward(self, edge_to, edge_from, a_to, a_from, curr_model,probs,pred_edge_to, pred_edge_from,recon_pred_edge_to,recon_pred_edge_from):
+      
         outputs = curr_model( edge_to, edge_from)
         embedding_to, embedding_from = outputs["umap"]
         recon_to, recon_from = outputs["recon"]
+
+
         # TODO stop gradient edge_to_ng = edge_to.detach().clone()
 
         recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from, a_to, a_from).to(self.device)
-        umap_l,new_l,total_l = self.umap_loss(embedding_to, embedding_from, probs,pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from)
+        umap_l,new_l,total_l = self.umap_loss(embedding_to, embedding_from, probs,pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from, curr_model)
         temporal_l = self.temporal_loss(curr_model).to(self.device)
 
         loss = total_l + self.lambd1 * recon_l + self.lambd2 * temporal_l
 
         return umap_l, new_l, self.lambd1 *recon_l, self.lambd2 *temporal_l, loss
+    
 
 
 
