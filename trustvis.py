@@ -183,6 +183,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     ##### construct the spitial complex
     spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
     edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
+    #### make wij = wji
+    
     # create non boundary labels
     np.save('pred_probs_for_epoch{}'.format(iteration), pred_probs)
     np.save('probs_for_epoch{}'.format(iteration), probs)

@@ -148,8 +148,6 @@ class UmapLoss(nn.Module):
         self.DEVICE = torch.device(device)
         self.data_provider = data_provider
         self.epoch = epoch
-        # self.a_rcon = nn.Parameter(torch.randn(2000))
-        # self.b_recon = nn.Parameter(torch.randn(2000))
 
     @property
     def a(self):
@@ -192,14 +190,27 @@ class UmapLoss(nn.Module):
         pred_edge_to = pred_edge_to.to(self.DEVICE)
         pred_edge_from = pred_edge_from.to(self.DEVICE)
 
+        recon_pred_to_Res = recon_pred_edge_to.argmax(axis=1)
+        recon_pred_from_Res = recon_pred_edge_from.argmax(axis=1)
+
         ### margin loss
+
+        # condition_error = ((recon_pred_to_Res != pred_edge_to_Res) | (recon_pred_from_Res != pred_edge_from_Res))
+
+        # condition_ = (condition_error & (~is_pred_same))
 
         batch_margin = positive_distance_mean +  (negative_distance_mean - positive_distance_mean) * (1-probs)
 
-        dynamic_margin = (1.0 - is_pred_same.float()) * batch_margin
+        # print(probs.mean(), probs[~is_pred_same].mean())
 
-        # max (0, [m1,m2 .... mn] - [d1,d2 ... dn])
+        dynamic_margin = (1.0 - is_pred_same.float()) * batch_margin
+        # dynamic_margin = (1.0 - is_pred_same.float()) * torch.ones(batch_size).to(self.DEVICE) * 100
+        # dynamic_margin = condition_ * batch_margin
+
+        # max (0, [m1,m2 .... mn] - [d1,d2 ... dn]) 1,2,3
         margin_loss = F.relu(dynamic_margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
+
+        # print(positive_distance.mean(), positive_distance[~is_pred_same].mean(), positive_distance[condition_].mean())
 
         ### ======================================== margin loss end ========================================== ###
 
@@ -223,37 +234,36 @@ class UmapLoss(nn.Module):
         # top2_classes_from, top2_indices_from = torch.topk(pred_edge_from[~is_pred_same], 2, dim=1)
 
 
-        recon_pred_to = recon_pred_edge_to
-        recon_pred_from =recon_pred_edge_from
-        temp = 0.001
-        recon_pred_to_softmax = F.softmax(recon_pred_to / temp, dim=-1)
-        recon_pred_from_softmax = F.softmax(recon_pred_from / temp, dim=-1)
+        # recon_pred_to = recon_pred_edge_to
+        # recon_pred_from =recon_pred_edge_from
+        # temp = 0.001
+        # recon_pred_to_softmax = F.softmax(recon_pred_to / temp, dim=-1)
+        # recon_pred_from_softmax = F.softmax(recon_pred_from / temp, dim=-1)
 
-        pred_to_softmax = F.softmax(pred_edge_to / temp, dim=-1)
-        pred_from_softmax = F.softmax(pred_edge_from / temp, dim=-1)
+        # pred_to_softmax = F.softmax(pred_edge_to / temp, dim=-1)
+        # pred_from_softmax = F.softmax(pred_edge_from / temp, dim=-1)
         
-        recon_pred_to_softmax = torch.Tensor(recon_pred_to_softmax.to(self.DEVICE))
-        recon_pred_from_softmax = torch.Tensor(recon_pred_from_softmax.to(self.DEVICE))
+        # recon_pred_to_softmax = torch.Tensor(recon_pred_to_softmax.to(self.DEVICE))
+        # recon_pred_from_softmax = torch.Tensor(recon_pred_from_softmax.to(self.DEVICE))
+        
 
-        recon_loss_to = torch.mean(torch.pow(pred_to_softmax - recon_pred_to_softmax, 2),1)
-        recon_loss_from = torch.mean(torch.pow(pred_from_softmax - recon_pred_from_softmax, 2),1)
+        # recon_loss_to = torch.mean(torch.pow(pred_to_softmax - recon_pred_to_softmax, 2),1)
+        # recon_loss_from = torch.mean(torch.pow(pred_from_softmax - recon_pred_from_softmax, 2),1)
 
 
-        # modified_max_loss = ((recon_loss_to + recon_loss_from )/ (0.01 + 100 * positive_distance[~is_pred_same])).mean()
-        recon_loss_to[is_pred_same] = 0
-        recon_loss_from[is_pred_same] = 0
+        # # modified_max_loss = ((recon_loss_to + recon_loss_from )/ (0.01 + 100 * positive_distance[~is_pred_same])).mean()
+        # recon_loss_to[is_pred_same] = 0
+        # recon_loss_from[is_pred_same] = 0
 
        
-        # # 0.4 0.3  0.1 0.2  0.26  0.0
+        # # # 0.4 0.3  0.1 0.2  0.26  0.0
 
-        recon_pred_to_Res = recon_pred_to.argmax(axis=1)
-        recon_pred_from_Res = recon_pred_from.argmax(axis=1)
-        condition_error = ((recon_pred_to_Res != pred_edge_to_Res) | (recon_pred_from_Res != pred_edge_from_Res))
-        condition_ = (condition_error & (~is_pred_same))
-        modified_max_loss =  ((recon_loss_to[condition_] + recon_loss_from[condition_]) * torch.exp(-(positive_distance[condition_]**1))).mean()
-        # modified_max_loss =  (1 * torch.exp(-(positive_distance[~is_pred_same]**1))).mean()
-        fenzi = (recon_loss_to[condition_] + recon_loss_from[condition_]).mean()
-        fenmu = torch.exp(-(positive_distance[~is_pred_same] ** 1)).mean()
+        # condition_error = ((recon_pred_to_Res != pred_edge_to_Res) | (recon_pred_from_Res != pred_edge_from_Res))
+        # condition_ = (condition_error & (~is_pred_same))
+        # modified_max_loss =  ((recon_loss_to[condition_] + recon_loss_from[condition_]) * torch.exp(-(positive_distance[condition_]**1))).mean()
+        # # modified_max_loss =  (1 * torch.exp(-(positive_distance[~is_pred_same]**1))).mean()
+        # fenzi = (recon_loss_to[condition_] + recon_loss_from[condition_]).mean()
+        # fenmu = torch.exp(-(positive_distance[~is_pred_same] ** 1)).mean()
         # d = positive_distance[~is_pred_same].mean() 
         # print("prediction loss{} , exp:{},distance:{}".format(fenzi,fenmu,d))
         # modified_max_loss = 100 * (recon_loss_to + recon_loss_from).mean()
@@ -308,6 +318,12 @@ class UmapLoss(nn.Module):
             distance_embedding, self.a, self.b
         )
         probabilities_distance = probabilities_distance.to(self.DEVICE)
+        #TODO
+
+        # probabilities_distance[~is_pred_same] +=0.2
+ 
+        # probabilities_distance = torch.clamp(probabilities_distance, min=0, max=1)
+
 
         probabilities_graph = torch.cat(
             (probs, torch.zeros(neg_num).to(self.DEVICE)), dim=0,
@@ -322,7 +338,13 @@ class UmapLoss(nn.Module):
             repulsion_strength=self._repulsion_strength,
         )  
         umap_l = torch.mean(ce_loss).to(self.DEVICE) 
-        margin_loss = modified_max_loss.to(self.DEVICE)
+        margin_loss = margin_loss.to(self.DEVICE)
+
+
+        if torch.isnan(margin_loss):
+            margin_loss = torch.tensor(0.0).to(margin_loss.device)
+
+
 
         # print("umap loss and new loss:",torch.mean(ce_loss), modified_max_loss )
 
