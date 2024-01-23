@@ -211,112 +211,16 @@ class UmapLoss(nn.Module):
         recon_pred_to_Res = recon_pred_edge_to.argmax(axis=1)
         recon_pred_from_Res = recon_pred_edge_from.argmax(axis=1)
 
-        ### margin loss
 
-        # condition_error = ((recon_pred_to_Res != pred_edge_to_Res) | (recon_pred_from_Res != pred_edge_from_Res))
-
-        # condition_ = (condition_error & (~is_pred_same))
-
-        # batch_margin = positive_distance_mean +  (negative_distance_mean - positive_distance_mean) * (1-probs)
-        # dynamic_margin = (1.0 - is_pred_same.float()) * batch_margin
-        # margin_loss = F.relu(dynamic_margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
-
-        # print(positive_distance.mean(), positive_distance[~is_pred_same].mean(), positive_distance[condition_].mean())
-
-        ### ======================================== margin loss end ========================================== ###
-
-        # print("all data distance: {} subset distance:{}".format(positive_distance.mean(), positive_distance[~is_pred_same].mean()))
-        
-        
-        
-        # ##### strategy: if pred dissimilar change to negative
-        # pred_edge_to_Res = pred_edge_to_Res.to(self.DEVICE)
-        # pred_edge_from_Res = pred_edge_from_Res.to(self.DEVICE)
-
-
-        # dynamic labeling
-        # condition = (pred_edge_to_Res.to(self.DEVICE) != pred_edge_from_Res.to(self.DEVICE)) & (positive_distance.to(self.DEVICE) < negative_distance_mean.to(self.DEVICE))
-        # probs[condition] = 0
-        #TODO
-        
-
-
-        # top2_classes_to, top2_indices_to = torch.topk(pred_edge_to[~is_pred_same], 2, dim=1)
-        # top2_classes_from, top2_indices_from = torch.topk(pred_edge_from[~is_pred_same], 2, dim=1)
-
-
-        recon_pred_to = recon_pred_edge_to
-        recon_pred_from =recon_pred_edge_from
         temp = 0.001
-        recon_pred_to_softmax = F.softmax(recon_pred_to / temp, dim=-1)
-        recon_pred_from_softmax = F.softmax(recon_pred_from / temp, dim=-1)
+        recon_pred_to_softmax = F.softmax(recon_pred_edge_to / temp, dim=-1)
+        recon_pred_from_softmax = F.softmax(recon_pred_edge_from / temp, dim=-1)
 
         pred_to_softmax = F.softmax(pred_edge_to / temp, dim=-1)
         pred_from_softmax = F.softmax(pred_edge_from / temp, dim=-1)
         
         recon_pred_to_softmax = torch.Tensor(recon_pred_to_softmax.to(self.DEVICE))
         recon_pred_from_softmax = torch.Tensor(recon_pred_from_softmax.to(self.DEVICE))
-        
-
-        # recon_loss_to = torch.mean(torch.pow(pred_to_softmax - recon_pred_to_softmax, 2),1)
-        # recon_loss_from = torch.mean(torch.pow(pred_from_softmax - recon_pred_from_softmax, 2),1)
-
-
-        # # modified_max_loss = ((recon_loss_to + recon_loss_from )/ (0.01 + 100 * positive_distance[~is_pred_same])).mean()
-        # recon_loss_to[is_pred_same] = 0
-        # recon_loss_from[is_pred_same] = 0
-
-       
-        # # # 0.4 0.3  0.1 0.2  0.26  0.0
-
-        # condition_error = ((recon_pred_to_Res != pred_edge_to_Res) | (recon_pred_from_Res != pred_edge_from_Res))
-        # condition_ = (condition_error & (~is_pred_same))
-        # modified_max_loss =  ((recon_loss_to[condition_] + recon_loss_from[condition_]) * torch.exp(-(positive_distance[condition_]**1))).mean()
-        # # modified_max_loss =  (1 * torch.exp(-(positive_distance[~is_pred_same]**1))).mean()
-        # fenzi = (recon_loss_to[condition_] + recon_loss_from[condition_]).mean()
-        # fenmu = torch.exp(-(positive_distance[~is_pred_same] ** 1)).mean()
-        # d = positive_distance[~is_pred_same].mean() 
-        # print("prediction loss{} , exp:{},distance:{}".format(fenzi,fenmu,d))
-        # modified_max_loss = 100 * (recon_loss_to + recon_loss_from).mean()
-        # modified_max_loss = 100 * (1 / (0.01 + 1 * positive_distance[~is_pred_same])).mean()
-
-        # print("prediction loss{} , exp:{}, all data distance: {} subset distance:{}".format(fenzi,fenmu,positive_distance.mean(), positive_distance[~is_pred_same].mean()))
-        
-
-
-        # recon_pred_toRes = torch.Tensor(recon_pred_to.argmax(axis=1)).to(self.DEVICE)
-        # recon_pred_fromRes = torch.Tensor(recon_pred_from.argmax(axis=1)).to(self.DEVICE) 
-
-        # recon_top2_to = torch.gather(torch.Tensor(recon_pred_to).to(self.DEVICE), 1, top2_indices_to)
-        # recon_top2_from = torch.gather(torch.Tensor(recon_pred_from).to(self.DEVICE), 1, top2_indices_from)
-
-        # TODO top2
-        # recon_loss_to = torch.mean(torch.pow(top2_classes_to - torch.Tensor(recon_top2_to).to(self.DEVICE), 2),1)
-        # recon_loss_from = torch.mean(torch.pow(top2_classes_from - torch.Tensor(recon_top2_from).to(self.DEVICE), 2),1)
-
-
-
-        # recon_loss_to = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_to ), 1.0), torch.pow(edge_to - recon_to , 2)), 1))
-        # recon_loss_from = torch.mean(torch.mean(torch.multiply(torch.pow((1+a_from ), 1.0), torch.pow(edge_from  - recon_from , 2)), 1))
-
-        # recon_loss_to = torch.mean(torch.multiply(torch.pow((1+a_to ), 1.0), torch.pow(edge_to - recon_to , 2)), 1)
-        # recon_loss_from = torch.mean(torch.multiply(torch.pow((1+a_from ), 1.0), torch.pow(edge_from  - recon_from , 2)), 1)
-      
-      
-
-        # condition2 = (recon_pred_toRes == pred_edge_to_Res[~is_pred_same]) & (recon_pred_fromRes == pred_edge_from_Res[~is_pred_same])
-        # # data_ = torch.ones(len(pred_edge_to[~is_pred_same])).to(self.DEVICE)
- 
-        # recon_loss_to[is_pred_same] = 0
-        # recon_loss_from[is_pred_same] = 0
-        # recon_loss_to[recon_loss_to > 1] = 0
-        # recon_loss_from[recon_loss_from >1] = 0
-
-        # print(recon_loss_to,recon_loss_from)
-
-        # prediction_loss = (torch.mean(recon_loss_to) + torch.mean(recon_loss_from))/2
-
-
         #### umap loss
         distance_embedding = torch.cat(
             (
@@ -329,13 +233,6 @@ class UmapLoss(nn.Module):
             distance_embedding, self.a, self.b
         )
         probabilities_distance = probabilities_distance.to(self.DEVICE)
-        #TODO
-
-
-        # probabilities_distance[~is_pred_same] +=0.2
- 
-        # probabilities_distance = torch.clamp(probabilities_distance, min=0, max=1)
-
 
         probabilities_graph = torch.cat(
             (probs, torch.zeros(neg_num).to(self.DEVICE)), dim=0,
@@ -351,41 +248,19 @@ class UmapLoss(nn.Module):
         )  
 
 
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
         batch_margin = positive_distance_mean +  (negative_distance_mean - positive_distance_mean) * (1-probs)
-
-        # initial_tensor = torch.zeros(2000)
         init_margin = (1.0 - is_pred_same.float()) * batch_margin
-        # print("init_margin", init_margin[~is_pred_same].mean())
 
-        # print(init_margin[~is_pred_same].mean().item())
-
-        if iteration > 5:
+        if iteration > 1:
             margin = self.newton_step_with_regularization(init_margin, is_pred_same, 
                                                       edge_to[~is_pred_same],edge_from[~is_pred_same], probs[~is_pred_same],
                                                       embedding_to[~is_pred_same],embedding_from[~is_pred_same],curr_model,
-                                                      pred_edge_to_Res[~is_pred_same],pred_edge_to_Res[~is_pred_same],
-                                                      recon_pred_to_Res[~is_pred_same], recon_pred_from_Res[~is_pred_same],pred_from_softmax[~is_pred_same],positive_distance_mean,negative_distance_mean)
+                                                      pred_to_softmax[~is_pred_same], pred_from_softmax[~is_pred_same],positive_distance_mean,negative_distance_mean)
         else:
             margin = init_margin
         
         print(margin[~is_pred_same].mean().item(),positive_distance.mean().item(), positive_distance[~is_pred_same].mean().item())
         
-        
-
         # print("dynamic marin", margin[~is_pred_same].mean())
         # print("margin", margin.mean().item())
         margin_loss = F.relu(margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
@@ -395,11 +270,6 @@ class UmapLoss(nn.Module):
 
         if torch.isnan(margin_loss):
             margin_loss = torch.tensor(0.0).to(margin_loss.device)
-        
-
-
-
-        # print("umap loss and new loss:",torch.mean(ce_loss), modified_max_loss )
 
         return umap_l, margin_loss, umap_l+margin_loss
 
@@ -416,59 +286,40 @@ class UmapLoss(nn.Module):
         indices = np.where(~(condition1 & condition2))[0]
         return indices
     
-    def newton_step_with_regularization(self, dynamic_margin, is_pred_same, edge_to, edge_from, probs, emb_to, emb_from, curr_model, pred_edge_to_Res, pred_edge_from_Res, recon_pred_to_Res,recon_pred_from_Res,pred_from_softmax, positive_distance_mean, negative_distance_mean, epsilon=1e-4):
+    def newton_step_with_regularization(self, dynamic_margin, is_pred_same, edge_to, edge_from, probs, emb_to, emb_from, curr_model, pred_to_softmax, pred_from_softmax, positive_distance_mean, negative_distance_mean, epsilon=1e-4):
         # Ensure the input tensors require gradient
         for tensor in [edge_to, edge_from, emb_to, emb_from]:
             tensor.requires_grad_(True)
 
-        # Compute distance embedding
+        # umap loss
         distance_embedding = torch.norm(emb_to - emb_from, dim=1)
-
-        # Convert distance to probability
         probabilities_distance = convert_distance_to_probability(distance_embedding, self.a, self.b)
-
-        # Compute probabilities from the graph
         probabilities_graph = probs
-
-        # Compute cross entropy loss
         _, _, ce_loss = compute_cross_entropy(probabilities_graph, probabilities_distance, repulsion_strength=self._repulsion_strength)
-        # print("ce_loss", ce_loss.shape, emb_to.shape)
 
         # Create a tensor of ones with the same size as ce_loss
         ones = torch.ones_like(ce_loss)
 
-        # Compute gradient 计算出 下一步umap要如何放y
+        # Compute gradient 
         grad = torch.autograd.grad(ce_loss, emb_to, grad_outputs=ones, create_graph=True)[0]
         # Compute gradient for emb_from
         grad_emb_from = torch.autograd.grad(ce_loss, emb_from, grad_outputs=ones, create_graph=True)[0]     
 
-
-
-        # learning rate估算 下一次放的位置 y*
+        # use learning rate approximate the y_next
         next_emb_to = emb_to - 1 * grad
         next_emb_from = emb_from - 1 * grad_emb_from
 
-        # learning rate估算 取上一次
-        # prev_emb_to = emb_to + 0.01 * grad
-
-        ##### init matrix 【 210 * 2 】yi = y * 
-
-        # 假设 next_emb_to 的形状为 (m, n)
-        # metrix = MyModel(next_emb_to)
-
-        # # 打印可学习矩阵的初始值，它应与 next_emb_to 相同
-        # print(metrix.learnable_matrix)
-
-        # metrix = torch.tensor(next_emb_to, requires_grad=True)
-        # # 将next_emb_to转换为一个可求导的张量
         """
         strategy 1: gen y* from yi, and then push y* to yj then calculate || y*-yi || 
         strategy 2: gen y* from yj, and then pull y* to yi then calculate || y*-yi || 
+        strategy 3: gen yi* and yj * from yj an yi, and push yi* to yj di = || yi* - yi||,and push yi* to yi, dj = || yj* - yj||, margin = max(di,dj)
         """
-        # strategy 1
+        """ strategy 1 """
         # metrix = torch.tensor(next_emb_to, dtype=torch.float, requires_grad=True)
         # strategy 2
-        metrix = torch.tensor(next_emb_from, dtype=torch.float, requires_grad=True)
+        # metrix = torch.tensor(next_emb_from, dtype=torch.float, requires_grad=True)
+        """ strategy 3 """
+        metrix = torch.tensor(torch.cat((next_emb_to, next_emb_from),dim=0), dtype=torch.float, requires_grad=True)
 
         for param in curr_model.parameters():
             param.requires_grad = False
@@ -477,18 +328,33 @@ class UmapLoss(nn.Module):
         # loss = pred_from_softmax - torch.mean(torch.pow(pred_from_softmax - F.softmax(inv / 0.01, dim=-1), 2),1)
         optimizer = optim.Adam([metrix], lr=0.01)
         # 训练循环
-        for epoch in range(5):
+        for epoch in range(20):
             optimizer.zero_grad() 
             inv = curr_model.decoder(metrix) 
             inv_pred = self.pred_fn(inv)
             # inv_pred = torch.tensor(inv_pred, dtype=torch.float, device=self.DEVICE, requires_grad=True)
             # # 计算损失
-            inv_pred_to_softmax = F.softmax(inv_pred / 0.001, dim=-1)
-            # strategy 1
-            # loss = 10 * torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2)) + torch.mean(torch.pow(inv - edge_from, 2))
-            # strategy 2                                             # 
-            loss = 10 * torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2)) + torch.mean(torch.pow(inv - edge_from, 2)) + 0.1 * torch.mean(torch.pow(emb_to - metrix, 2))
             
+            """ strategy 1 """
+            # inv_pred_to_softmax = F.softmax(inv_pred / 0.001, dim=-1)
+            # loss = 10 * torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2)) + torch.mean(torch.pow(inv - edge_from, 2))
+            # strategy 2   
+            
+                # Calculate the three terms separately
+                # first_term = torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2))
+                # third_term = torch.mean(torch.pow(emb_to - metrix, 2))
+                # threshold = 0.01  # 
+
+                # if first_term.item() < threshold:
+                #     loss = first_term + torch.mean(torch.pow(inv - edge_from, 2)) + 0.1 * third_term
+                # else:
+                #     loss = first_term + torch.mean(torch.pow(inv - edge_from, 2))
+                                             # 
+                # loss = 100 * torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2)) + torch.mean(torch.pow(inv - edge_from, 2)) + 0.1 * torch.mean(torch.pow(emb_to - metrix, 2))
+            """ strategy 3 """
+            inv_pred_softmax = F.softmax(inv_pred / 0.001, dim=-1)
+            loss = 10 * torch.mean(torch.pow(torch.cat((pred_from_softmax,pred_to_softmax),dim=0) - inv_pred_softmax, 2)) + torch.mean(torch.pow(inv - torch.cat((edge_from, edge_to),dim=0), 2))
+
             # bp
             loss.backward(retain_graph=True)         
             optimizer.step()
@@ -498,76 +364,31 @@ class UmapLoss(nn.Module):
             #     break
             # if epoch % 500 == 0:
                 # print(f'Epoch {epoch}, Loss: {loss.item()}')
+        
+        """strategy 1 or 2"""
 
-        # 计算 emb_to 和 metrix 之间的差异
-        difference = emb_to - metrix
+        # final_margin = torch.norm(emb_to - metrix, dim=1)
 
-        # 计算差异的范数（例如，使用L2范数）
-        # margin = torch.norm(difference, p=2, dim=1) 
-       
-        margin = torch.norm(emb_to - metrix, dim=1)
-        # margin = torch.where(margin < 0.1, torch.full_like(margin, positive_distance_mean), margin)
-        margin = torch.where(margin < positive_distance_mean.item(), dynamic_margin[~is_pred_same], margin)
+        """strategy 3 start"""
+        margin = torch.norm( torch.cat((emb_to, emb_from),dim=0) - metrix, dim=1)
+        total_length = margin.size(0)
+        half_length = total_length // 2
+        margin_to = margin[:half_length]
+        margin_from = margin[half_length:]    
+        final_margin =  torch.max(margin_to, margin_from)
+        """strategy 3 end """
+
+        final_margin = torch.where(final_margin < positive_distance_mean.item(), dynamic_margin[~is_pred_same], final_margin)
+        
         # margin = torch.where(margin > negative_distance_mean.item(), dynamic_margin[~is_pred_same], margin)
 
-        
-
-        
-
-        # 输出平均margin
-        # print("margin", margin.mean().item())
-        # print("margin",margin.mean())
+        # margin = torch.max(margin, dynamic_margin[~is_pred_same])
 
         for param in curr_model.parameters():
             param.requires_grad = True
 
-        dynamic_margin[~is_pred_same] = margin.to(self.DEVICE)
+        dynamic_margin[~is_pred_same] = final_margin.to(self.DEVICE)
 
-    
-
-
-
-        
-        
-
-
-
-       
-
-        
-       
-  
-
-        # combined_samples = torch.cat((next_emb_to, next_emb_from), dim=0)
-        # recon_next = curr_model.decoder(combined_samples)
-        # recon_next_pred = self.data_provider.get_pred(self.epoch, recon_next.cpu().detach().numpy(), 0).argmax(axis=1)
-        # recon_to_next_pred, recon_from_next_pred = np.split(recon_next_pred, 2, axis=0)
-        # recon_to_next_pred = torch.Tensor(recon_to_next_pred).to(self.DEVICE)
-        # recon_from_next_pred = torch.Tensor(recon_from_next_pred).to(self.DEVICE)
-
-
-
-        # margin = dynamic_margin
-       
-        # condition_ij_right = (recon_pred_to_Res == pred_edge_to_Res) & (recon_pred_from_Res == pred_edge_from_Res)
-
-        # # # if yi 和 yi_next && yj and yj_next have correct inverse prediction 
-        # condition = (recon_to_next_pred == pred_edge_to_Res)  & (recon_from_next_pred == pred_edge_from_Res) & condition_ij_right
-        # margin[~is_pred_same][condition] = 0
-        
-
-        # # 如果 基于现在 继续向前拉肯定会错，就把现在的两个点的距离作为 margin
-        # distance = (torch.norm(emb_from - emb_to, dim=1)) ** 2
-
-        # #### 当前 yi 和 yi pred 正确，但是 yi_next会被预测称j 类，或者  yj_next会被预测称i 类，那他们的margin就停在此刻。
-        # condition_2 = (condition_ij_right & (recon_to_next_pred == pred_edge_from_Res) )  | (condition_ij_right & (recon_from_next_pred == pred_edge_to_Res))
-        # # margin[(recon_next_pred == pred_edge_to_Res) & (recon_pred_to_Res == pred_edge_to_Res)] = 0
-        # margin[~is_pred_same][condition_2] = distance[condition_2].to(self.DEVICE)
-
-        
-
-        # print(torch.sum(condition),torch.sum(condition_2))
-        
 
 
         return dynamic_margin
@@ -602,228 +423,6 @@ class DVILoss(nn.Module):
     
 
 
-
-    
-# TODO delete after eval
-class SementicUmapLoss(nn.Module):
-    def __init__(self, negative_sample_rate, device, data_provider, iteration, _a=1.0, _b=1.0, repulsion_strength=1.0):
-        super(SementicUmapLoss, self).__init__()
-
-        self._negative_sample_rate = negative_sample_rate
-        self._a = _a,
-        self._b = _b,
-        self._repulsion_strength = repulsion_strength
-        self.DEVICE = torch.device(device)
-        self.data_provider = data_provider
-        self.iteration = iteration
-
-    @property
-    def a(self):
-        return self._a[0]
-
-    @property
-    def b(self):
-        return self._b[0]
-
-    def forward(self, embedding_to, embedding_from,recon_to, recon_from, probs,pred_org_to, pred_org_from, margin=0):
-        batch_size = embedding_to.shape[0]
-
-        max_pred_org_to = torch.argmax(torch.Tensor(pred_org_to), dim=1)
-        max_pred_org_from = torch.argmax(torch.Tensor(pred_org_from), dim=1)
- 
-        # get negative samples
-        embedding_neg_to = torch.repeat_interleave(embedding_to, self._negative_sample_rate, dim=0)
-        repeat_neg = torch.repeat_interleave(embedding_from, self._negative_sample_rate, dim=0)
-        randperm = torch.randperm(repeat_neg.shape[0])
-        embedding_neg_from = repeat_neg[randperm]
-
-
-        distance_embedding = torch.cat(
-            (
-                torch.norm(embedding_to - embedding_from, dim=1),
-                torch.norm(embedding_neg_to - embedding_neg_from, dim=1),
-            ),
-            dim=0,
-        )
-        probabilities_distance = convert_distance_to_probability(
-            distance_embedding, self.a, self.b
-        )
-        probabilities_distance = probabilities_distance.to(self.DEVICE)
-        probs = self.reweight_samples(max_pred_org_to, max_pred_org_from, probs)
-        # set true probabilities based on negative sampling
-        probabilities_graph = torch.cat(
-            (probs, torch.zeros(batch_size * self._negative_sample_rate).to(self.DEVICE)), dim=0,
-        )
-        # probabilities_graph = torch.cat(
-        #     (torch.ones(batch_size), torch.zeros(batch_size * self._negative_sample_rate)), dim=0,
-        # )
-        probabilities_graph = probabilities_graph.to(device=self.DEVICE)
-
-        # compute cross entropy
-        (_, _, ce_loss) = compute_cross_entropy(
-            probabilities_graph,
-            probabilities_distance,
-            repulsion_strength=self._repulsion_strength,
-        )
-
-
-        return torch.mean(ce_loss) 
-    
-
-    def reweight_samples(self, max_pred_org_to, max_pred_org_from, probs, alpha=0.1, beta=0.8):
-        """
-
-        base on init probs and prediction adjust sample's weight
-
-        parameters:
-        pred_recon_to: Tensor, reconstriction prediction to
-        pred_recon_from: Tensor, reconstriction prediction from
-        pred_org_to: Tensor, original prediction to
-        pred_org_from: Tensor, original prediction from
-        probs: Tensor, original hight-dimensional weights
-        alpha: float, for weight adjust
-        beta: float, for weight adjust
-
-        return:
-        Tensor, adjusted weight
-        """
-        # pred_recon_to = torch.Tensor(pred_recon_to).to(self.DEVICE)
-        # pred_recon_from = torch.Tensor(pred_recon_from).to(self.DEVICE)
-        # pred_org_to = torch.Tensor(pred_org_to).to(self.DEVICE)
-        # pred_org_from = torch.Tensor(pred_org_from).to(self.DEVICE)
-        # probs = probs.to(self.DEVICE)
-
-        # max_pred_recon_to = torch.argmax(pred_recon_to, dim=1)
-        # max_pred_recon_from = torch.argmax(pred_recon_from, dim=1)
-        # max_pred_org_to = torch.argmax(pred_org_to, dim=1)
-        # max_pred_org_from = torch.argmax(pred_org_from, dim=1)
-
-        # max_pred_recon_to = max_pred_recon_to[matching_indices]
-        # max_pred_recon_from = max_pred_recon_from[matching_indices]
-        # max_pred_org_to = max_pred_org_to[matching_indices]
-        # max_pred_org_from = max_pred_org_from[matching_indices]
-        # probs = probs[matching_indices]
-
-
-        # increase_weight_mask = (max_pred_recon_to == max_pred_org_to) & (max_pred_recon_from == max_pred_org_from)
-        # decrease_weight_mask = ~(increase_weight_mask)
-    
-        # probs[increase_weight_mask] = probs[increase_weight_mask] * beta + (1 - beta) * alpha
-        # probs[decrease_weight_mask] = probs[decrease_weight_mask] * (1 - alpha)
-        
-        # 如果最大预测值下标相同，则将对应的 probs 设置为 1
-        same_max_pred_org_mask = (max_pred_org_to == max_pred_org_from)
-        # probs[same_max_pred_org_mask] = 1.0
-        # 最大预测值下标不同，但重建预测相同，施加斥力使 probs 减小
-        diff_max_pred_org_same_max_pred_recon_mask = ~same_max_pred_org_mask
-        probs[diff_max_pred_org_same_max_pred_recon_mask] = 0
-
-
-        # 其他情况，根据 alpha 调整 probs
-        # probs[~same_max_pred_mask] *= alpha
-
-        # # 计算 pred_org_to 和 pred_org_from 的相似度
-        # similarity = (pred_org_to == pred_org_from).float()
-
-        # # 计算 pred_org_to 和 pred_org_from 在每个维度上的相似度
-        # similarity_per_dim = (pred_org_to == pred_org_from).float()  # shape: [N, 10]
-
-        # # 将相似度聚合到一个维度
-        # similarity = torch.mean(similarity_per_dim, dim=1)  # shape: [N]
-
-
-        # # 调整相似情况下的权重
-        # adjusted_probs = probs * (1 - similarity) + similarity * alpha
-
-        # # 考虑重构预测与原始预测的不同
-        # recon_diff_to = torch.abs(pred_recon_to - pred_org_to)
-        # recon_diff_from = torch.abs(pred_recon_from - pred_org_from)
-        # adjusted_probs *= (1 - beta * (recon_diff_to + recon_diff_from))
-
-        return probs
-    
-    
-# TODO delete after eval
-class LogitUmapLoss(nn.Module):
-    def __init__(self, negative_sample_rate, device, data_provider, iteration, _a=1.0, _b=1.0, repulsion_strength=1.0):
-        super(LogitUmapLoss, self).__init__()
-
-        self._negative_sample_rate = negative_sample_rate
-        self._a = _a,
-        self._b = _b,
-        self._repulsion_strength = repulsion_strength
-        self.DEVICE = torch.device(device)
-        self.data_provider = data_provider
-        self.iteration = iteration
-
-    @property
-    def a(self):
-        return self._a[0]
-
-    @property
-    def b(self):
-        return self._b[0]
-
-    def forward(self, embedding_to, embedding_from, org_to, org_from, recon_to, recon_from, probs, margin=0):
-        batch_size = embedding_to.shape[0]
-        combined_samples = torch.cat((org_to, org_from, recon_to, recon_from), dim=0)
-        combined_probs = self.data_provider.get_pred(self.iteration, combined_samples.cpu().detach().numpy(),0)
-        org_to_p, org_from_p, recon_to_p, recon_from_p = np.split(combined_probs, 4, axis=0)
-        max_indices_to_p = np.argmax(org_to_p, axis=1)
-        max_indices_from_p = np.argmax(org_from_p, axis=1)
-        recon_max_to_p = np.array([recon_to_p[i, idx] for i, idx in enumerate(max_indices_to_p)])
-        recon_max_from_p = np.array([recon_from_p[i, idx] for i, idx in enumerate(max_indices_from_p)])
-
-        # 计算这些对应下标的值的绝对值差异
-        diff_to_p = np.abs(org_to_p[np.arange(len(org_to_p)), max_indices_to_p] - recon_max_to_p)
-        diff_from_p = np.abs(org_from_p[np.arange(len(org_from_p)), max_indices_from_p] - recon_max_from_p)
-
-        # get negative samples
-        embedding_neg_to = torch.repeat_interleave(embedding_to, self._negative_sample_rate, dim=0)
-        repeat_neg = torch.repeat_interleave(embedding_from, self._negative_sample_rate, dim=0)
-        randperm = torch.randperm(repeat_neg.shape[0])
-        embedding_neg_from = repeat_neg[randperm]
-
-        positive_distance = torch.norm(embedding_to - embedding_from, dim=1)
-        negative_distance = torch.norm(embedding_neg_to - embedding_neg_from, dim=1)
-        distance_embedding = torch.cat((positive_distance, negative_distance), dim=0)
-
-        probabilities_distance = convert_distance_to_probability(
-            distance_embedding, self.a, self.b
-        )
-        probabilities_distance = probabilities_distance.to(self.DEVICE)
-
-        # set true probabilities based on negative sampling
-        num_neg_samples = embedding_neg_to.shape[0]  # valied negative samples
-        diff_to_p_tensor = torch.from_numpy(diff_to_p).float().to(probs.device)
-        diff_from_p_tensor = torch.from_numpy(diff_from_p).float().to(probs.device)
-
-        # 确保这些张量与 probs 的形状匹配
-        average_diff_tensor = (diff_to_p_tensor + diff_from_p_tensor) / 2
-
-        # 计算加权的概率
-        #TODO probs
-        weighted_probs = torch.ones(batch_size).to(device=self.DEVICE) * average_diff_tensor
-        probabilities_graph = torch.cat(
-            (weighted_probs, torch.zeros(num_neg_samples).to(device=self.DEVICE)), dim=0,
-         )
-        
-
-   
-        probabilities_graph = probabilities_graph.to(device=self.DEVICE)
-
-        # compute cross entropy
-        (_, _, ce_loss) = compute_cross_entropy(
-            probabilities_graph,
-            probabilities_distance,
-            repulsion_strength=self._repulsion_strength,
-        )
-
-        # margin_loss = F.relu(margin - positive_distance).mean()
-
-        # total_loss = torch.mean(ce_loss)  + margin_loss
-
-        return ce_loss
 class ReconstructionLoss(nn.Module):
     def __init__(self, beta=1.0,alpha=0.5,scale_factor=0.1):
         super(ReconstructionLoss, self).__init__()

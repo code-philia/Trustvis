@@ -10,25 +10,24 @@ import time
 import numpy as np
 import argparse
 
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader
 from torch.utils.data import WeightedRandomSampler
 from umap.umap_ import find_ab_params
 
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss,BoundaryAwareLoss
-from singleVis.edge_dataset import DVIDataHandler
-from singleVis.trainer import DVITrainer
+from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, DummyTemporalLoss
+from singleVis.edge_dataset import VisDataHandler
+from singleVis.trainer import VISTrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
 from singleVis.spatial_edge_constructor import Trustvis_SpatialEdgeConstructor
-# from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
 
-from singleVis.projector import DVIProjector
+from singleVis.projector import VISProjector
 from singleVis.utils import find_neighbor_preserving_rate
 from sklearn.neighbors import NearestNeighbors
 ########################################################################################################################
-#                                                     DVI PARAMETERS                                                   #
+#                                                     PARAMETERS                                                   #
 ########################################################################################################################
 """This serve as an example of DeepVisualInsight implementation in pytorch."""
 VIS_METHOD = "DVI" # DeepVisualInsight
@@ -144,7 +143,7 @@ model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
 
 # Define Projector
-projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 
 start_flag = 1
@@ -218,7 +217,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
 
     pred_list = data_provider.get_pred(iteration, feature_vectors)
-    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention, labels_non_boundary, pred_probs,pred_list)
+    dataset = VisDataHandler(edge_to, edge_from, feature_vectors, attention, labels_non_boundary, pred_probs,pred_list)
     
     n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
     # chose sampler based on the number of dataset
@@ -234,9 +233,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     #                                                       TRAIN                                                          #
     ########################################################################################################################
 
-    # trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
-    
-    trainer = DVITrainer(model,criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
+    trainer = VISTrainer(model,criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
 
     t2=time.time()
     trainer.train(PATIENT, MAX_EPOCH,data_provider,iteration)

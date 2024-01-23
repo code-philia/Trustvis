@@ -16,14 +16,14 @@ from umap.umap_ import find_ab_params
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
 from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss
-from singleVis.edge_dataset import DVIDataHandler
-from singleVis.trainer import DVITrainer,DVIALTrainer
+from singleVis.edge_dataset import VisDataHandler
+from singleVis.trainer import VISTrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
 # from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
 from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
 
-from singleVis.projector import DVIProjector
+from singleVis.projector import VISProjector
 from singleVis.utils import find_neighbor_preserving_rate
 
 from trustVis.skeleton_generator import SkeletonGenerator,CenterSkeletonGenerator,HierarchicalClusteringProxyGenerator
@@ -137,7 +137,7 @@ umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, _a, _b, repulsion_strength
 recon_loss_fn = ReconstructionLoss(beta=1.0)
 single_loss_fn = SingleVisLoss(umap_loss_fn, recon_loss_fn, lambd=LAMBDA1)
 # Define Projector
-projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 
 evaluator = Evaluator(data_provider, projector)

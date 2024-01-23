@@ -19,14 +19,14 @@ from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
 from singleVis.losses import ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss
 from singleVis.backend import convert_distance_to_probability, compute_cross_entropy
-from singleVis.edge_dataset import DVIDataHandler
-from singleVis.trainer import DVITrainer
+from singleVis.edge_dataset import VisDataHandler
+from singleVis.trainer import VISTrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
 from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
 # from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
 
-from singleVis.projector import DVIProjector
+from singleVis.projector import VISProjector
 from singleVis.utils import find_neighbor_preserving_rate
 
 ########################################################################################################################
@@ -252,7 +252,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
 
     pred_list = data_provider.get_pred(iteration, feature_vectors)
-    dataset = DVIDataHandler(edge_to, edge_from, feature_vectors, attention, labels_non_boundary, probs,pred_list)
+    dataset = VisDataHandler(edge_to, edge_from, feature_vectors, attention, labels_non_boundary, probs,pred_list)
 
     n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
     # chose sampler based on the number of dataset
@@ -266,7 +266,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     #                                                       TRAIN                                                          #
     ########################################################################################################################
 
-    trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
+    trainer = VISTrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
 
     t2=time.time()
     trainer.train(PATIENT, MAX_EPOCH, data_provider,iteration)
