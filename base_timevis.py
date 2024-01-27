@@ -73,7 +73,7 @@ N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 
-VIS_MODEL_NAME = VISUALIZATION_PARAMETER["VIS_MODEL_NAME"]
+VIS_MODEL_NAME = 'timevis'
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
 SEGMENTS = [(EPOCH_START, EPOCH_END)]
@@ -156,7 +156,7 @@ trainer.save(save_dir=save_dir, file_name="{}".format(VIS_MODEL_NAME))
 from singleVis.visualizer import visualizer
 
 vis = visualizer(data_provider, projector, 200)
-save_dir = os.path.join(data_provider.content_path, "img")
+save_dir = os.path.join(data_provider.content_path, VIS_MODEL_NAME)
 os.makedirs(save_dir, exist_ok=True)
 
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD*4):
