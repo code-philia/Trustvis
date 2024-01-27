@@ -5,6 +5,7 @@ import time
 import json
 import numpy as np
 import argparse
+from torch import nn
 
 from torch.utils.data import DataLoader
 from torch.utils.data import WeightedRandomSampler
@@ -12,7 +13,7 @@ from umap.umap_ import find_ab_params
 
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, SingleVisLoss
+from singleVis.losses import ReconstructionLoss, SingleVisLoss
 from singleVis.edge_dataset import DataHandler
 from singleVis.trainer import SingleVisTrainer
 from singleVis.data import NormalDataProvider
@@ -20,6 +21,7 @@ from singleVis.spatial_edge_constructor import kcSpatialEdgeConstructor
 from singleVis.temporal_edge_constructor import GlobalTemporalEdgeConstructor
 from singleVis.projector import TimeVisProjector
 from singleVis.eval.evaluator import Evaluator
+from singleVis.backend import convert_distance_to_probability, compute_cross_entropy
 ########################################################################################################################
 #                                                    VISUALIZATION SETTING                                             #
 ########################################################################################################################
@@ -50,6 +52,7 @@ EPOCH_START = config["EPOCH_START"]
 EPOCH_END = config["EPOCH_END"]
 EPOCH_PERIOD = config["EPOCH_PERIOD"]
 EPOCH_NAME = config["EPOCH_NAME"]
+# EPOCH_START = 84
 
 # Training parameter (subject model)
 TRAINING_PARAMETER = config["TRAINING"]
@@ -84,6 +87,8 @@ DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else
 import Model.model as subject_model
 
 net = eval("subject_model.{}()".format(NET))
+# PREPROCESS = 1
+
 
 ########################################################################################################################
 #                                                    TRAINING SETTING                                                  #
@@ -97,6 +102,63 @@ if PREPROCESS:
 
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 projector = TimeVisProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+
+class UmapLoss(nn.Module):
+    def __init__(self, negative_sample_rate, device, _a=1.0, _b=1.0, repulsion_strength=1.0):
+        super(UmapLoss, self).__init__()
+
+        self._negative_sample_rate = negative_sample_rate
+        self._a = _a,
+        self._b = _b,
+        self._repulsion_strength = repulsion_strength
+        self.DEVICE = torch.device(device)
+
+    @property
+    def a(self):
+        return self._a[0]
+
+    @property
+    def b(self):
+        return self._b[0]
+
+    def forward(self, embedding_to, embedding_from, probs):
+        # get negative samples
+        embedding_neg_to = torch.repeat_interleave(embedding_to, self._negative_sample_rate, dim=0)
+        repeat_neg = torch.repeat_interleave(embedding_from, self._negative_sample_rate, dim=0)
+        randperm = torch.randperm(repeat_neg.shape[0])
+        embedding_neg_from = repeat_neg[randperm]
+        neg_num = len(embedding_neg_from)
+
+        positive_distance = torch.norm(embedding_to - embedding_from, dim=1)
+        negative_distance = torch.norm(embedding_neg_to - embedding_neg_from, dim=1)
+
+        distance_embedding = torch.cat(
+            (
+                positive_distance,
+                negative_distance,
+            ),
+            dim=0,
+        )
+        probabilities_distance = convert_distance_to_probability(
+            distance_embedding, self.a, self.b
+        )
+        probabilities_distance = probabilities_distance.to(self.DEVICE)
+
+        probabilities_graph = torch.cat(
+            (probs, torch.zeros(neg_num).to(self.DEVICE)), dim=0,
+        )
+
+        probabilities_graph = probabilities_graph.to(device=self.DEVICE)
+
+        # compute cross entropy
+        (_, _, ce_loss) = compute_cross_entropy(
+            probabilities_graph,
+            probabilities_distance,
+            repulsion_strength=self._repulsion_strength,
+        )   
+
+        return torch.mean(ce_loss)
+
 
 ########################################################################################################################
 #                                                  EDGE DATASET                                                        #
@@ -127,7 +189,7 @@ edge_to = edge_to[eliminate_zeros]
 edge_from = edge_from[eliminate_zeros]
 probs = probs[eliminate_zeros]
 
-dataset = DataHandler(edge_to, edge_from, feature_vectors, attention)
+dataset = DataHandler(edge_to, edge_from, feature_vectors, attention, probs)
 n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
 # chose sampler based on the number of dataset
 if len(edge_to) > pow(2,24):

@@ -580,13 +580,13 @@ class SingleVisLoss(nn.Module):
         self.recon_loss = recon_loss
         self.lambd = lambd
 
-    def forward(self, edge_to, edge_from, a_to, a_from, outputs):
+    def forward(self, edge_to, edge_from, a_to, a_from, outputs, probs):
         embedding_to, embedding_from = outputs["umap"]
         recon_to, recon_from = outputs["recon"]
 
         recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from, a_to, a_from)
         # recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from)
-        umap_l = self.umap_loss(embedding_to, embedding_from)
+        umap_l = self.umap_loss(embedding_to, embedding_from, probs)
 
         loss = umap_l + self.lambd * recon_l
 

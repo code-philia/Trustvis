@@ -74,6 +74,7 @@ def if_border(data):
 import argparse
 parser = argparse.ArgumentParser(description='Process hyperparameters...')
 parser.add_argument('--epoch' , type=int,default=100)
+parser.add_argument('--vismodel' , type=str,default='')
 args = parser.parse_args()
 CONTENT_PATH = "/home/yifan/0ExpMinist/GoogleNet/01"
 # CONTENT_PATH = "/home/yiming/EXP/CIFAR10_Clean"
@@ -120,9 +121,10 @@ MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 
 # VIS_MODEL_NAME = 'trustvis_modi'
 # VIS_MODEL_NAME = 'trustvis_repell'
-
+ENCODER_DIMS = [1024,512,512,512,2]
+DECODER_DIMS = [2,512,512,512,1024]
 # TAR_VIS_MODEL_NAME = 'dvi_eval'
-VIS_MODEL_NAME = 'base_dvi'
+VIS_MODEL_NAME = args.vismodel
 # VIS_MODEL_NAME = 'vis'
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 

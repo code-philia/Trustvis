@@ -22,12 +22,13 @@ class DataHandlerAbstractClass(Dataset, ABC):
         pass
 
 class DataHandler(Dataset):
-    def __init__(self, edge_to, edge_from, feature_vector, attention, transform=None):
+    def __init__(self, edge_to, edge_from, feature_vector, attention, probs, transform=None):
         self.edge_to = edge_to
         self.edge_from = edge_from
         self.data = feature_vector
         self.attention = attention
         self.transform = transform
+        self.probs = probs
 
     def __getitem__(self, item):
 
@@ -37,13 +38,14 @@ class DataHandler(Dataset):
         edge_from = self.data[edge_from_idx]
         a_to = self.attention[edge_to_idx]
         a_from = self.attention[edge_from_idx]
+        probs = self.probs[item]
         if self.transform is not None:
             # TODO correct or not?
             edge_to = Image.fromarray(edge_to)
             edge_to = self.transform(edge_to)
             edge_from = Image.fromarray(edge_from)
             edge_from = self.transform(edge_from)
-        return edge_to, edge_from, a_to, a_from
+        return edge_to, edge_from, a_to, a_from, probs
 
     def __len__(self):
         # return the number of all edges

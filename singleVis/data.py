@@ -122,7 +122,7 @@ class NormalDataProvider(DataProvider):
             testing_data = testing_data[test_index]
 
             model_location = os.path.join(self.model_path, "{}_{:d}".format(self.epoch_name, n_epoch), "subject_model.pth")
-            self.model.load_state_dict(torch.load(model_location, map_location=torch.device("cpu")))
+            self.model.load_state_dict(torch.load(model_location, map_location=torch.device("cpu")),strict=False)
             self.model = self.model.to(self.DEVICE)
             self.model.eval()
 
