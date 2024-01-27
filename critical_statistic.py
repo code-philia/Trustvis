@@ -3,7 +3,7 @@
 import copy
 import torch
 import sys
-sys.path.append('/home/yiming/trustvis')
+# sys.path.append('/home/yiming/trustvis')
 import numpy as np
 import os, json
 
@@ -19,7 +19,7 @@ from sklearn.neighbors import NearestNeighbors
 # sys.path.append("/home/yiming/ContrastDebugger")
 from singleVis.SingleVisualizationModel import VisModel
 from singleVis.utils import *
-from singleVis.projector import TimeVisProjector
+from singleVis.projector import TimeVisProjector, VISProjector
 from singleVis.eval.evaluate import *
 # from singleVis.utils import get_border_points
 # from re import sub
@@ -32,7 +32,6 @@ from pynndescent import NNDescent
 # from sklearn.neighbors import KDTree
 # from sklearn.metrics import pairwise_distances
 from scipy import stats as stats
-from singleVis.projector import DVIProjector
 # from skeleton_generator_with_cluster import SkeletonGenerator,CenterSkeletonGenerator
 # from sklearn.metrics.pairwise import cosine_similarity
 # from scipy.spatial import distance
@@ -76,7 +75,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Process hyperparameters...')
 parser.add_argument('--epoch' , type=int,default=100)
 args = parser.parse_args()
-CONTENT_PATH = "/home/yiming/EXP/fmnist_resnet18"
+CONTENT_PATH = "/home/yifan/0ExpMinist/GoogleNet/01"
 # CONTENT_PATH = "/home/yiming/EXP/CIFAR10_Clean"
 # CONTENT_PATH = "/home/yiming/ContrastDebugger"
 sys.path.append(CONTENT_PATH)
@@ -123,7 +122,7 @@ MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 # VIS_MODEL_NAME = 'trustvis_repell'
 
 # TAR_VIS_MODEL_NAME = 'dvi_eval'
-VIS_MODEL_NAME = 'dvi_eval'
+VIS_MODEL_NAME = 'base_dvi'
 # VIS_MODEL_NAME = 'vis'
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
@@ -132,7 +131,7 @@ DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else
 
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
-projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 # projector = TimeVisProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 n_neighbors = 15
@@ -276,8 +275,13 @@ for i in range(len(high_dim_border_flip_list)):
 
 # print(len(prediction_flip), len(low_dim_prediction_flip_list), len(high_dim_prediction_flip_list), prediction_flip_precision, prediction_flip_recall)
 # print(len(border_flip), len(low_dim_border_flip_list), len(high_dim_border_flip_list), border_flip_precision, border_flip_recall)
-print(true_prediction_flip, len(low_dim_prediction_flip_list), len(high_dim_prediction_flip_list), true_prediction_flip / len(low_dim_prediction_flip_list), true_prediction_flip / len(high_dim_prediction_flip_list))
-print(true_border_flip, len(low_dim_border_flip_list), len(high_dim_border_flip_list), true_border_flip / len(low_dim_border_flip_list), true_border_flip / len(high_dim_border_flip_list))
+                    
+# print(true_prediction_flip, len(low_dim_prediction_flip_list), len(high_dim_prediction_flip_list))
+print("training pred flip precision",true_prediction_flip / len(low_dim_prediction_flip_list))
+print("training pred flip recall ",true_prediction_flip / len(high_dim_prediction_flip_list))
+# print(true_border_flip, len(low_dim_border_flip_list), len(high_dim_border_flip_list))
+print("training bon confidence precision", true_border_flip / len(low_dim_border_flip_list)),
+print("training bon confidence recall ", true_border_flip / len(high_dim_border_flip_list))
 
 critical_list = list(set(high_dim_prediction_flip_list).union(set(high_dim_border_flip_list)))
 print(len(critical_list))
@@ -428,31 +432,35 @@ for i in range(len(high_dim_border_flip_list)):
 
 # print(len(prediction_flip), len(low_dim_prediction_flip_list), len(high_dim_prediction_flip_list), prediction_flip_precision, prediction_flip_recall)
 # print(len(border_flip), len(low_dim_border_flip_list), len(high_dim_border_flip_list), border_flip_precision, border_flip_recall)
-print(true_prediction_flip, len(low_dim_prediction_flip_list), len(high_dim_prediction_flip_list), true_prediction_flip / len(low_dim_prediction_flip_list), true_prediction_flip / len(high_dim_prediction_flip_list))
-print(true_border_flip, len(low_dim_border_flip_list), len(high_dim_border_flip_list), true_border_flip / len(low_dim_border_flip_list), true_border_flip / len(high_dim_border_flip_list))
+# print(true_prediction_flip, len(low_dim_prediction_flip_list), len(high_dim_prediction_flip_list)) 
+print("testing precision", true_prediction_flip / len(low_dim_prediction_flip_list))  
+print("testing recall", true_prediction_flip / len(high_dim_prediction_flip_list))
+# print(true_border_flip, len(low_dim_border_flip_list), len(high_dim_border_flip_list))
+print("testing bon confidence precision",  true_border_flip / len(low_dim_border_flip_list))
+print("testing bon confidence recall", true_border_flip / len(high_dim_border_flip_list))
 
 
 
-from singleVis.eval.evaluator import Evaluator
-evaluator = Evaluator(data_provider, projector)
-n = evaluator.eval_nn_train(REF_EPOCH, 15)
-n_1 = evaluator.eval_nn_test(REF_EPOCH, 15)
+# from singleVis.eval.evaluator import Evaluator
+# evaluator = Evaluator(data_provider, projector)
+# n = evaluator.eval_nn_train(REF_EPOCH, 15)
+# n_1 = evaluator.eval_nn_test(REF_EPOCH, 15)
 
-p = evaluator.eval_inv_train(REF_EPOCH)
-p_1 = evaluator.eval_inv_test(REF_EPOCH)
+# p = evaluator.eval_inv_train(REF_EPOCH)
+# p_1 = evaluator.eval_inv_test(REF_EPOCH)
 
-# t = evaluator.eval_temporal_local_corr_train(TAR_EPOCH, 1, EPOCH_START, EPOCH_END, EPOCH_PERIOD)
-# t_1 = evaluator.eval_temporal_local_corr_test(TAR_EPOCH, 1, EPOCH_START, EPOCH_END, EPOCH_PERIOD)
+# # t = evaluator.eval_temporal_local_corr_train(TAR_EPOCH, 1, EPOCH_START, EPOCH_END, EPOCH_PERIOD)
+# # t_1 = evaluator.eval_temporal_local_corr_test(TAR_EPOCH, 1, EPOCH_START, EPOCH_END, EPOCH_PERIOD)
 
-# tn = evaluator.eval_temporal_train(15)
-# tn_1 = evaluator.eval_temporal_test(15)
+# # tn = evaluator.eval_temporal_train(15)
+# # tn_1 = evaluator.eval_temporal_test(15)
 
 
-# n_2 = evaluator.eval_b_train(TAR_EPOCH, 15)
-# n_3 = evaluator.eval_b_test(TAR_EPOCH, 15)
+# # n_2 = evaluator.eval_b_train(TAR_EPOCH, 15)
+# # n_3 = evaluator.eval_b_test(TAR_EPOCH, 15)
 
-print(n, n_1)
-print(p, p_1)
+# print(n, n_1)
+# print(p, p_1)
 # print(t, t_1)
 # print(tn, tn_1)
 # print(n_2, n_3)
