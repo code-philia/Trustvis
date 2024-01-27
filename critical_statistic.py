@@ -94,6 +94,7 @@ CLASSES = config["CLASSES"]
 DATASET = config["DATASET"]
 PREPROCESS = config["VISUALIZATION"]["PREPROCESS"]
 GPU_ID = config["GPU"]
+GPU_ID = 0
 REF_EPOCH = args.epoch
 TAR_EPOCH = REF_EPOCH + 1
 EPOCH_START = REF_EPOCH
@@ -119,10 +120,6 @@ PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 
 
-# VIS_MODEL_NAME = 'trustvis_modi'
-# VIS_MODEL_NAME = 'trustvis_repell'
-ENCODER_DIMS = [1024,512,512,512,2]
-DECODER_DIMS = [2,512,512,512,1024]
 # TAR_VIS_MODEL_NAME = 'dvi_eval'
 VIS_MODEL_NAME = args.vismodel
 # VIS_MODEL_NAME = 'vis'
@@ -133,8 +130,8 @@ DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else
 
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
-projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
-# projector = TimeVisProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+# projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+projector = TimeVisProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 n_neighbors = 15
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
