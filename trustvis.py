@@ -47,7 +47,7 @@ parent_path = os.path.dirname(current_path)
 new_path = os.path.join(parent_path, 'training_dynamic')
 
 
-parser.add_argument('--content_path', type=str,default="/home/yifan/dataset/clean/pairflip/cifar10/0")
+parser.add_argument('--content_path', type=str)
 # parser.add_argument('--start', type=int,default=1)
 # parser.add_argument('--end', type=int,default=3)
 parser.add_argument('--epoch' , type=int)
@@ -108,7 +108,6 @@ S_N_EPOCHS = VISUALIZATION_PARAMETER["S_N_EPOCHS"]
 N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
-# MAX_EPOCH = 1
 VIS_MODEL_NAME = 'trustvis' ### saved_as VIS_MODEL_NAME.pth
 
 
@@ -141,24 +140,22 @@ _a, _b = find_ab_params(1.0, min_dist)
 # Define visualization models
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
-
 # Define Projector
 projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 
 start_flag = 1
+fixed_number = -1
+
 
 prev_model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
 for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
-    # Define DVI Loss
+    # Define Loss
     if start_flag:
         temporal_loss_fn = DummyTemporalLoss(DEVICE)
-        # recon_loss_fn = ReconstructionPredLoss(data_provider=data_provider,epoch=iteration, beta=1.0)
         recon_loss_fn = ReconstructionLoss(beta=1.0)
-        umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, data_provider, iteration,net, _a, _b,  repulsion_strength=1.0)
-        # umap_loss_fn = SementicUmapLoss(negative_sample_rate, DEVICE, data_provider, iteration, _a, _b, repulsion_strength=1.0)
-        # recon_loss_fn = ReconstructionPredEdgeLoss(data_provider=data_provider,iteration=iteration, beta=1.0)
+        umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, data_provider, iteration,net, fixed_number, _a, _b,  repulsion_strength=1.0)
         criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
         start_flag = 0
     else:
@@ -185,39 +182,17 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
     spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
     edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
-    # edge_to = np.load('edge_to_epoch{}.npy'.format(iteration))
-    # edge_from = np.load('edge_from_epoch{}.npy'.format(iteration))
-    # probs = np.load('probs_epoch{}.npy'.format(iteration))
-    # pred_probs = np.load('pred_probs_epoch{}.npy'.format(iteration))
-    # feature_vectors = np.load('feature_vectors_epoch{}.npy'.format(iteration))
-    # attention = np.load('attention_epoch{}.npy'.format(iteration))
-
-    # np.save('edge_to_epoch{}'.format(iteration),edge_to)
-    # np.save('edge_from_epoch{}'.format(iteration),edge_from)
-    # np.save('probs_epoch{}'.format(iteration),probs)
-    # np.save('pred_probs_epoch{}'.format(iteration),pred_probs)
-    # np.save('feature_vectors_epoch{}'.format(iteration),feature_vectors)
-    # np.save('attention_epoch{}'.format(iteration),attention)
-    
-
-    
-    #### make wij = wji
-    
-    # # create non boundary labels
-    # np.save('pred_probs_for_epoch{}'.format(iteration), pred_probs)
-    # np.save('probs_for_epoch{}'.format(iteration), probs)
-    labels_non_boundary = np.zeros(len(edge_to))
-    # create boundary labels
 
     t1 = time.time()
 
     print('complex-construct:', t1-t0)
+
     
 
 
 
     pred_list = data_provider.get_pred(iteration, feature_vectors)
-    dataset = VisDataHandler(edge_to, edge_from, feature_vectors, attention, labels_non_boundary, pred_probs,pred_list)
+    dataset = VisDataHandler(edge_to, edge_from, feature_vectors, attention, pred_probs,pred_list)
     
     n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
     # chose sampler based on the number of dataset
@@ -269,8 +244,6 @@ if not os.path.exists(save_dir):
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     vis.savefig(i, path=os.path.join(save_dir, "{}_{}_{}_{}.png".format(DATASET, i, VIS_METHOD,now)))
 
-# emb = projector.batch_project(data_provider)
-
     
 ########################################################################################################################
 #                                                       EVALUATION                                                     #
@@ -278,6 +251,6 @@ for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
 evaluator = Evaluator(data_provider, projector)
 
 
-Evaluation_NAME = 'trustvisbase_eval'
+Evaluation_NAME = '{}base_eval'.format(VIS_MODEL_NAME)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     evaluator.save_epoch_eval(i, 15, temporal_k=5, file_name="{}".format(Evaluation_NAME))

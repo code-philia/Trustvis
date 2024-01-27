@@ -16,6 +16,8 @@ import torch.nn.functional as F
 import numpy as np
 from scipy.stats import spearmanr
 
+import json
+from datetime import datetime
 # Set the random seed for numpy
 
 """Losses modules for preserving four propertes"""
@@ -144,7 +146,7 @@ class MyModel(nn.Module):
         self.learnable_matrix = nn.Parameter(initial_tensor.clone().detach())
 
 class UmapLoss(nn.Module):
-    def __init__(self, negative_sample_rate, device,  data_provider, epoch, net,  _a=1.0, _b=1.0, repulsion_strength=1.0):
+    def __init__(self, negative_sample_rate, device,  data_provider, epoch, net, fixed_number = 5, _a=1.0, _b=1.0, repulsion_strength=1.0):
         super(UmapLoss, self).__init__()
 
         self._negative_sample_rate = negative_sample_rate
@@ -156,6 +158,7 @@ class UmapLoss(nn.Module):
         self.epoch = epoch
         self.net = net
         self.model_path = os.path.join(self.data_provider.content_path, "Model")
+        self.fixed_number = fixed_number
 
         model_location = os.path.join(self.model_path, "{}_{:d}".format('Epoch', epoch), "subject_model.pth")
         self.net.load_state_dict(torch.load(model_location, map_location=torch.device("cpu")),strict=False)
@@ -175,7 +178,7 @@ class UmapLoss(nn.Module):
     def b(self):
         return self._b[0]
 
-    def forward(self, embedding_to, embedding_from, probs, pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from,curr_model,iteration):
+    def forward(self, edge_to_idx, edge_from_idx,embedding_to, embedding_from, probs, pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from,curr_model,iteration):
         batch_size = embedding_to.shape[0]
         # get negative samples
         embedding_neg_to = torch.repeat_interleave(embedding_to, self._negative_sample_rate, dim=0)
@@ -251,15 +254,15 @@ class UmapLoss(nn.Module):
         batch_margin = positive_distance_mean +  (negative_distance_mean - positive_distance_mean) * (1-probs)
         init_margin = (1.0 - is_pred_same.float()) * batch_margin
 
-        if iteration > 1:
-            margin = self.newton_step_with_regularization(init_margin, is_pred_same, 
+        if iteration > self.fixed_number:
+            margin = self.newton_step_with_regularization(edge_to_idx, edge_from_idx,init_margin, is_pred_same, 
                                                       edge_to[~is_pred_same],edge_from[~is_pred_same], probs[~is_pred_same],
                                                       embedding_to[~is_pred_same],embedding_from[~is_pred_same],curr_model,
                                                       pred_to_softmax[~is_pred_same], pred_from_softmax[~is_pred_same],positive_distance_mean,negative_distance_mean)
         else:
             margin = init_margin
         
-        print(margin[~is_pred_same].mean().item(),positive_distance.mean().item(), positive_distance[~is_pred_same].mean().item())
+        # print(margin[~is_pred_same].mean().item(),positive_distance.mean().item(), positive_distance[~is_pred_same].mean().item())
         
         # print("dynamic marin", margin[~is_pred_same].mean())
         # print("margin", margin.mean().item())
@@ -286,12 +289,13 @@ class UmapLoss(nn.Module):
         indices = np.where(~(condition1 & condition2))[0]
         return indices
     
-    def newton_step_with_regularization(self, dynamic_margin, is_pred_same, edge_to, edge_from, probs, emb_to, emb_from, curr_model, pred_to_softmax, pred_from_softmax, positive_distance_mean, negative_distance_mean, epsilon=1e-4):
+    def newton_step_with_regularization(self, edge_to_idx, edge_from_idx, dynamic_margin, is_pred_same, edge_to, edge_from, probs, emb_to, emb_from, curr_model, pred_to_softmax, pred_from_softmax, positive_distance_mean, negative_distance_mean, epsilon=1e-4):
         # Ensure the input tensors require gradient
         for tensor in [edge_to, edge_from, emb_to, emb_from]:
             tensor.requires_grad_(True)
 
         # umap loss
+    
         distance_embedding = torch.norm(emb_to - emb_from, dim=1)
         probabilities_distance = convert_distance_to_probability(distance_embedding, self.a, self.b)
         probabilities_graph = probs
@@ -303,7 +307,53 @@ class UmapLoss(nn.Module):
         # Compute gradient 
         grad = torch.autograd.grad(ce_loss, emb_to, grad_outputs=ones, create_graph=True)[0]
         # Compute gradient for emb_from
-        grad_emb_from = torch.autograd.grad(ce_loss, emb_from, grad_outputs=ones, create_graph=True)[0]     
+        grad_emb_from = torch.autograd.grad(ce_loss, emb_from, grad_outputs=ones, create_graph=True)[0] 
+
+        ################################################################################## analysis grad start  ############################################################################################
+        # filename = "grad_list.json"
+
+        # # Check if the file exists and read it
+        # if os.path.exists(filename):
+        #     print("just read")
+        #     with open(filename, 'r') as file:
+        #         # Load the existing data and convert the keys back to the appropriate type if necessary
+        #         grad_list = json.load(file)
+        #         # Convert string keys back to integers
+        #         grad_list = {int(k): v for k, v in grad_list.items()}
+        # else:
+        #     print("create new json file")
+        #     grad_list = dict()
+
+        # for idx, g in zip(edge_to_idx, grad):
+        #     # Ensure idx is a Python integer
+        #     idx_int = idx.item() if isinstance(idx, torch.Tensor) else int(idx)
+
+        #     # Convert the gradient tensor to a tuple (or another desired format)
+        #     gradient_tuple = tuple(g.tolist())
+
+        #     # Check if the integer index is already in the dictionary
+        #     if idx_int not in grad_list:
+        #         grad_list[idx_int] = []
+        #     # else:
+        #     #     print("{} already in".format(idx_int) )
+
+        #     # Append the gradient to the corresponding list
+        #     grad_list[idx_int].append(gradient_tuple)
+        # # Convert Tensor keys to string (or another suitable format)
+        # serializable_grad_list = {str(k): v for k, v in grad_list.items()}
+        # # serializable_grad_list = {str(idx): v for idx, v in enumerate(grad_list)}
+
+
+        # # Serialize the modified grad_list into JSON format
+        # grad_list_json = json.dumps(serializable_grad_list)
+
+        # # Write the serialized data to the file
+        # with open(filename, 'w') as file:
+        #     file.write(grad_list_json)
+
+        # print(f"Saved grad_list to {filename}")
+
+        ################################################################################## analysis grad end  ############################################################################################
 
         # use learning rate approximate the y_next
         next_emb_to = emb_to - 1 * grad
@@ -378,11 +428,12 @@ class UmapLoss(nn.Module):
         final_margin =  torch.max(margin_to, margin_from)
         """strategy 3 end """
 
-        final_margin = torch.where(final_margin < positive_distance_mean.item(), dynamic_margin[~is_pred_same], final_margin)
+        # final_margin = torch.where(final_margin < positive_distance_mean.item(), dynamic_margin[~is_pred_same], final_margin)
+        
         
         # margin = torch.where(margin > negative_distance_mean.item(), dynamic_margin[~is_pred_same], margin)
 
-        # margin = torch.max(margin, dynamic_margin[~is_pred_same])
+        final_margin = torch.max(final_margin, dynamic_margin[~is_pred_same])
 
         for param in curr_model.parameters():
             param.requires_grad = True
@@ -404,7 +455,7 @@ class DVILoss(nn.Module):
         self.lambd2 = lambd2
         self.device = device
 
-    def forward(self, edge_to, edge_from, a_to, a_from, curr_model,probs,pred_edge_to, pred_edge_from,recon_pred_edge_to,recon_pred_edge_from,iteration):
+    def forward(self, edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from, curr_model,probs,pred_edge_to, pred_edge_from,recon_pred_edge_to,recon_pred_edge_from,iteration):
       
         outputs = curr_model( edge_to, edge_from)
         embedding_to, embedding_from = outputs["umap"]
@@ -414,7 +465,7 @@ class DVILoss(nn.Module):
         # TODO stop gradient edge_to_ng = edge_to.detach().clone()
 
         recon_l = self.recon_loss(edge_to, edge_from, recon_to, recon_from, a_to, a_from).to(self.device)
-        umap_l,new_l,total_l = self.umap_loss(embedding_to, embedding_from, probs,pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from, curr_model,iteration)
+        umap_l,new_l,total_l = self.umap_loss(edge_to_idx, edge_from_idx, embedding_to, embedding_from, probs,pred_edge_to, pred_edge_from,edge_to, edge_from,recon_to, recon_from,a_to, a_from,recon_pred_edge_to,recon_pred_edge_from, curr_model,iteration)
         temporal_l = self.temporal_loss(curr_model).to(self.device)
 
         loss = total_l + self.lambd1 * recon_l + self.lambd2 * temporal_l

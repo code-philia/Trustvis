@@ -9,26 +9,17 @@ import time
 import numpy as np
 import argparse
 
-from torch.utils.data import DataLoader
-from torch.utils.data import WeightedRandomSampler
 from umap.umap_ import find_ab_params
 
-from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, TemporalLoss, DVILoss, SingleVisLoss, DummyTemporalLoss
-from singleVis.edge_dataset import VisDataHandler
-from singleVis.trainer import VISTrainer
+from singleVis.losses import UmapLoss, ReconstructionLoss, SingleVisLoss
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
 # from singleVis.spatial_edge_constructor import SingleEpochSpatialEdgeConstructor
-from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
 
 from singleVis.projector import VISProjector
-from singleVis.utils import find_neighbor_preserving_rate
-
-from trustVis.skeleton_generator import SkeletonGenerator,CenterSkeletonGenerator,HierarchicalClusteringProxyGenerator
 ########################################################################################################################
-#                                                     DVI PARAMETERS                                                   #
+#                                                    PARAMETERS                                                   #
 ########################################################################################################################
 """This serve as an example of DeepVisualInsight implementation in pytorch."""
 VIS_METHOD = "DVI" # DeepVisualInsight

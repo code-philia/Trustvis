@@ -50,13 +50,12 @@ class DataHandler(Dataset):
         return len(self.edge_to)
 
 class VisDataHandler(Dataset):
-    def __init__(self, edge_to, edge_from, feature_vector, attention, labels, probs, pred, transform=None):
+    def __init__(self, edge_to, edge_from, feature_vector, attention, probs, pred, transform=None):
         self.edge_to = edge_to
         self.edge_from = edge_from
         self.data = feature_vector
         self.attention = attention
         self.transform = transform
-        self.labels = labels
         self.probs = probs
         self.pred = pred
 
@@ -69,7 +68,6 @@ class VisDataHandler(Dataset):
         edge_from_pred = self.pred[edge_from_idx]
         a_to = self.attention[edge_to_idx]
         a_from = self.attention[edge_from_idx]
-        label = self.labels[item]  # 获取标签
         probs = self.probs[item]
     
         if self.transform is not None:
@@ -78,7 +76,7 @@ class VisDataHandler(Dataset):
             edge_to = self.transform(edge_to)
             edge_from = Image.fromarray(edge_from)
             edge_from = self.transform(edge_from)
-        return edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from, label, probs,edge_to_pred,edge_from_pred
+        return edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from, probs,edge_to_pred,edge_from_pred
 
     def __len__(self):
         # return the number of all edges
