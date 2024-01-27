@@ -108,8 +108,7 @@ S_N_EPOCHS = VISUALIZATION_PARAMETER["S_N_EPOCHS"]
 N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
-# MAX_EPOCH = 1
-VIS_MODEL_NAME = 'trustvis_modi' ### saved_as VIS_MODEL_NAME.pth
+VIS_MODEL_NAME = 'trustvis_tempo' ### saved_as VIS_MODEL_NAME.pth
 
 
 # Define hyperparameters
@@ -528,6 +527,6 @@ for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
 evaluator = Evaluator(data_provider, projector)
 
 
-Evaluation_NAME = 'trustvis_temoral_eval'
+Evaluation_NAME = '{}_eval'.format(VIS_MODEL_NAME)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     evaluator.save_epoch_eval(i, 15, temporal_k=5, file_name="{}".format(Evaluation_NAME))

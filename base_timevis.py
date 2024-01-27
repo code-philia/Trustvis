@@ -73,7 +73,7 @@ N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 
-VIS_MODEL_NAME = 'timevis'
+VIS_MODEL_NAME = 'base_timevis'
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
 SEGMENTS = [(EPOCH_START, EPOCH_END)]
@@ -166,7 +166,7 @@ for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD*4):
 #                                                       EVALUATION                                                     #
 ########################################################################################################################
 eval_epochs = range(EPOCH_START, EPOCH_END, EPOCH_PERIOD)
-EVALUATION_NAME = 'timevis_eval'
+EVALUATION_NAME = '{}_eval'.format(VIS_MODEL_NAME)
 evaluator = Evaluator(data_provider, projector)
 for eval_epoch in eval_epochs:
     evaluator.save_epoch_eval(eval_epoch, 15, temporal_k=5, file_name="{}".format(EVALUATION_NAME))
