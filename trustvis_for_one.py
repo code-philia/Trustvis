@@ -145,7 +145,7 @@ projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_n
 
 
 start_flag = 1
-fixed_number = -1
+fixed_number = 100
 
 
 prev_model = VisModel(ENCODER_DIMS, DECODER_DIMS)

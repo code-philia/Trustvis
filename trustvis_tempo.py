@@ -112,7 +112,7 @@ VIS_MODEL_NAME = 'trustvis_tempo' ### saved_as VIS_MODEL_NAME.pth
 
 
 # Define hyperparameters
-GPU_ID = 0
+GPU_ID = 1
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
 print("device", DEVICE)
 
@@ -229,47 +229,47 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
             pred_dif_list = []
             pred_dif_index_list = []
-            gen_border_data = np.array([])
-            import random
-            pred_origin = data_provider.get_pred(iteration, ref_train_data)
-            pred_res = data_provider.get_pred(iteration, ref_train_data).argmax(axis=1)
+            # gen_border_data = np.array([])
+            # import random
+            # pred_origin = data_provider.get_pred(iteration, ref_train_data)
+            # pred_res = data_provider.get_pred(iteration, ref_train_data).argmax(axis=1)
 
-            for i in range(len(knn_indices)):
-            # for i in range(5000):
-                neighbor_list = list(knn_indices[i])
-                neighbor_data = ref_train_data[neighbor_list]
-                # neighbor_pred_origin = pred_origin[neighbor_list]
-                neighbor_pred = pred_res[neighbor_list]
-                for j in range(len(neighbor_pred)):
-                    if neighbor_pred[0] != neighbor_pred[j]:
-                        # if iteration < ((EPOCH_END - EPOCH_START)*0.3):
-                        if iteration < 70:
-                            random_number = random.randint(1, 7)
-                        else:
-                            random_number = 1
-                        if random_number == 1:
-                        # gen_points = np.linspace(neighbor_data[0], neighbor_data[j], 3)[1:-1]
-                            gen_points = np.array([(neighbor_data[0] + neighbor_data[j]) / 2])
-                            if len(gen_border_data) > 0:
-                                gen_border_data = np.concatenate((gen_border_data, gen_points), axis=0)
-                            else:
-                                gen_border_data = gen_points
-                                print(gen_border_data.shape)
+            # for i in range(len(knn_indices)):
+            # # for i in range(5000):
+            #     neighbor_list = list(knn_indices[i])
+            #     neighbor_data = ref_train_data[neighbor_list]
+            #     # neighbor_pred_origin = pred_origin[neighbor_list]
+            #     neighbor_pred = pred_res[neighbor_list]
+            #     for j in range(len(neighbor_pred)):
+            #         if neighbor_pred[0] != neighbor_pred[j]:
+            #             # if iteration < ((EPOCH_END - EPOCH_START)*0.3):
+            #             if iteration < 70:
+            #                 random_number = random.randint(1, 7)
+            #             else:
+            #                 random_number = 1
+            #             if random_number == 1:
+            #             # gen_points = np.linspace(neighbor_data[0], neighbor_data[j], 3)[1:-1]
+            #                 gen_points = np.array([(neighbor_data[0] + neighbor_data[j]) / 2])
+            #                 if len(gen_border_data) > 0:
+            #                     gen_border_data = np.concatenate((gen_border_data, gen_points), axis=0)
+            #                 else:
+            #                     gen_border_data = gen_points
+            #                     print(gen_border_data.shape)
 
-                if (i % 5000) == 0:
-                    print(i)
+            #     if (i % 5000) == 0:
+            #         print(i)
 
-            print(gen_border_data.shape)
-            sub_n = 10000
-            if len(gen_border_data) > 10000:
-                random_indices = np.random.choice(len(gen_border_data), sub_n, replace=False)
-                # random get subsets
-                fin_gen_border_data = gen_border_data[random_indices, :]
-            else:
-                fin_gen_border_data = gen_border_data
-            spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net, gen_border_data=fin_gen_border_data)
+            # print(gen_border_data.shape)
+            # sub_n = 10000
+            # if len(gen_border_data) > 10000:
+            #     random_indices = np.random.choice(len(gen_border_data), sub_n, replace=False)
+            #     # random get subsets
+            #     fin_gen_border_data = gen_border_data[random_indices, :]
+            # else:
+            #     fin_gen_border_data = gen_border_data
+            spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
             # spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
-            edge_to, edge_from, probs, pred_probs, feature_vectors, attention, knn_indices = spatial_cons.construct()
+            edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
             start_flag = 0
             optimizer = torch.optim.Adam(model.parameters(), lr=.01, weight_decay=1e-5)
             lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
