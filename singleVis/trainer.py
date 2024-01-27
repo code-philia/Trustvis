@@ -129,6 +129,7 @@ class SingleVisTrainer(TrainerAbstractClass):
             edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
             a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
             a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
+            probs = probs.to(device=self.DEVICE, dtype=torch.float32)
 
             outputs = self.model(edge_to, edge_from)
             umap_l, recon_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, outputs,probs)

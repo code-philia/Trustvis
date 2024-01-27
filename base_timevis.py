@@ -87,8 +87,6 @@ DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else
 import Model.model as subject_model
 
 net = eval("subject_model.{}()".format(NET))
-# PREPROCESS = 1
-
 
 ########################################################################################################################
 #                                                    TRAINING SETTING                                                  #
