@@ -279,11 +279,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         else:
             recon_loss_fn = ReconstructionLoss(beta=1.0)
             umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, data_provider, iteration,net, 100, _a, _b,  repulsion_strength=1.0)
-            # TODO AL mode, redefine train_representation
-            # prev_data = data_provider.train_representation(iteration-EPOCH_PERIOD)
-            # prev_data = prev_data.reshape(prev_data.shape[0],prev_data.shape[1])
-            # curr_data = data_provider.train_representation(iteration)
-            # curr_data = curr_data.reshape(curr_data.shape[0],curr_data.shape[1])
+            
             if temporal_k == 2:
                 ref_train_data = data_provider.train_representation(iteration-1).squeeze()
                 # ref_train_data = ref_train_data.reshape(ref_train_data.shape[0],ref_train_data.shape[1])
