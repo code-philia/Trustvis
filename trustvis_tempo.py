@@ -188,6 +188,8 @@ if PREPROCESS:
 
 # Define visualization models
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
+
+#####  load exsiting vis model for transfer learning
 # save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(EPOCH_START), ORIGIN_VIS_MODEL_NAME + ".pth")
 # save_model = torch.load(save_dir, map_location="cpu")
 # model.load_state_dict(save_model["state_dict"])
@@ -220,15 +222,15 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             # umap_loss_fn = SementicUmapLoss(negative_sample_rate, DEVICE, data_provider, iteration, _a, _b, repulsion_strength=1.0)
             # recon_loss_fn = ReconstructionPredEdgeLoss(data_provider=data_provider,iteration=iteration, beta=1.0)
             criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
-            ref_train_data = data_provider.train_representation(iteration).squeeze()
-            ref_train_data = ref_train_data.reshape(ref_train_data.shape[0],ref_train_data.shape[1])
-            k_neighbors = 15
-            high_neigh = NearestNeighbors(n_neighbors=k_neighbors, radius=0.4)
-            high_neigh.fit(ref_train_data)
-            knn_dists, knn_indices = high_neigh.kneighbors(ref_train_data, n_neighbors=k_neighbors, return_distance=True)
+            # ref_train_data = data_provider.train_representation(iteration).squeeze()
+            # ref_train_data = ref_train_data.reshape(ref_train_data.shape[0],ref_train_data.shape[1])
+            # k_neighbors = 15
+            # high_neigh = NearestNeighbors(n_neighbors=k_neighbors, radius=0.4)
+            # high_neigh.fit(ref_train_data)
+            # knn_dists, knn_indices = high_neigh.kneighbors(ref_train_data, n_neighbors=k_neighbors, return_distance=True)
 
-            pred_dif_list = []
-            pred_dif_index_list = []
+            # pred_dif_list = []
+            # pred_dif_index_list = []
             # gen_border_data = np.array([])
             # import random
             # pred_origin = data_provider.get_pred(iteration, ref_train_data)
@@ -422,9 +424,9 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             final_list = list(set(diff_list).union(set(top_indices)))
             sim_data = tar_train_data[top_indices]
 
-            print(len(high_dim_prediction_flip_list))
-            print(len(high_dim_border_flip_list))
-            print(len(vis_error_list))
+            # print(len(high_dim_prediction_flip_list))
+            # print(len(high_dim_border_flip_list))
+            # print(len(vis_error_list))
             ##### construct the spitial complex
             spatial_cons = TrustvisTemporalSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net, diff_data=diff_data, sim_data=sim_data)
             edge_to, edge_from, probs, pred_probs, feature_vectors, attention, knn_indices = spatial_cons.construct()
