@@ -342,7 +342,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
                 critical_list = list(set(critical_list).union(set(npr_low_indices.tolist())))
                 critical_list = list(set(critical_list).union(set(inv_low_indices.tolist())))
                 critical_data = tar_train_data[critical_list]
-                print(len(critical_list))
+                # print(len(critical_list))
             else:
                 tar_train_data = data_provider.train_representation(iteration).squeeze()
 
