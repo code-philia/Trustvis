@@ -112,7 +112,7 @@ VIS_MODEL_NAME = 'trustvis_tempo' ### saved_as VIS_MODEL_NAME.pth
 
 
 # Define hyperparameters
-GPU_ID = 0
+GPU_ID = 1
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
 print("device", DEVICE)
 
@@ -275,6 +275,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
             temporal_k = 0
         else:
+            recon_loss_fn = ReconstructionLoss(beta=1.0)
+            umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, data_provider, iteration,net, 100, _a, _b,  repulsion_strength=1.0)
             # TODO AL mode, redefine train_representation
             # prev_data = data_provider.train_representation(iteration-EPOCH_PERIOD)
             # prev_data = prev_data.reshape(prev_data.shape[0],prev_data.shape[1])

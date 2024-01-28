@@ -75,8 +75,9 @@ import argparse
 parser = argparse.ArgumentParser(description='Process hyperparameters...')
 parser.add_argument('--epoch' , type=int,default=100)
 parser.add_argument('--vismodel' , type=str,default='')
+parser.add_argument('--content_path' , type=str,default='')
 args = parser.parse_args()
-CONTENT_PATH = "/home/yifan/0ExpMinist/GoogleNet/01"
+CONTENT_PATH = args.content_path
 # CONTENT_PATH = "/home/yiming/EXP/CIFAR10_Clean"
 # CONTENT_PATH = "/home/yiming/ContrastDebugger"
 sys.path.append(CONTENT_PATH)
@@ -439,6 +440,13 @@ print("testing bon confidence precision",  true_border_flip / len(low_dim_border
 print("testing bon confidence recall", true_border_flip / len(high_dim_border_flip_list))
 
 
+from singleVis.eval.evaluator import Evaluator
+
+data_provider = NormalDataProvider(CONTENT_PATH, net,1, 20, EPOCH_PERIOD, device=DEVICE, epoch_name='Epoch', classes=CLASSES,verbose=0)
+
+evaluator = Evaluator(data_provider, projector)
+evaluator.eval_critical_temporal_train(15)
+evaluator.eval_critical_temporal_test(15)
 
 # from singleVis.eval.evaluator import Evaluator
 # evaluator = Evaluator(data_provider, projector)
