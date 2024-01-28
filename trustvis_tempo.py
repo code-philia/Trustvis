@@ -269,7 +269,9 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             #     fin_gen_border_data = gen_border_data[random_indices, :]
             # else:
             #     fin_gen_border_data = gen_border_data
+            t0 = time.time()
             spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
+            t1 = time.time()
             # spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
             edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
             start_flag = 0
@@ -424,7 +426,9 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             # print(len(high_dim_border_flip_list))
             # print(len(vis_error_list))
             ##### construct the spitial complex
+            t0 = time.time()
             spatial_cons = TrustvisTemporalSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net, diff_data=diff_data, sim_data=sim_data)
+            t1 = time.time()
             edge_to, edge_from, probs, pred_probs, feature_vectors, attention, knn_indices = spatial_cons.construct()
 
             # Define training parameters
@@ -446,18 +450,6 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
         # Define Edge dataset
 
-
-        t0 = time.time()
-
-        ##### construct the spitial complex
-        # spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
-        # edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
-        # create non boundary labels
-        # np.save('probs_for_epoch{}'.format(iteration), pred_probs)
-        labels_non_boundary = np.zeros(len(edge_to))
-        # create boundary labels
-
-        t1 = time.time()
 
         print('complex-construct:', t1-t0)
 

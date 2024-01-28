@@ -228,8 +228,9 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
             pred_dif_list = []
             pred_dif_index_list = []
-        
+            t0 = time.time()
             spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
+            t1 = time.time()
             # spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
             edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
             start_flag = 0
@@ -372,7 +373,9 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
             print(len(high_dim_prediction_flip_list),len(high_dim_border_flip_list),len(vis_error_list))
             ##### construct the spitial complex
+            t0 = time.time()
             spatial_cons = TrustvisTemporalSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net, diff_data=diff_data, sim_data=sim_data)
+            t1 = time.time()
             edge_to, edge_from, probs, pred_probs, feature_vectors, attention, knn_indices = spatial_cons.construct()
 
             # Define training parameters
@@ -387,13 +390,6 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             # npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
             t_2= time.time()
 
-
-        t0 = time.time()
-
-        labels_non_boundary = np.zeros(len(edge_to))
-        # create boundary labels
-
-        t1 = time.time()
 
         print('complex-construct:', t1-t0)
 

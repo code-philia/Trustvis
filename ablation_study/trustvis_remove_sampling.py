@@ -51,15 +51,10 @@ parser.add_argument('--content_path', type=str)
 parser.add_argument('--start', type=int,default=1)
 parser.add_argument('--end', type=int,default=3)
 parser.add_argument('--epoch' , type=int)
-parser.add_argument('--pred' , type=float, default=0.5)
 
-# parser.add_argument('--epoch_end', type=int)
-parser.add_argument('--epoch_period', type=int,default=1)
 parser.add_argument('--preprocess', type=int,default=0)
 parser.add_argument('--base',type=bool,default=False)
 args = parser.parse_args()
-#TODO why?
-pred_lambda = args.pred
 
 
 CONTENT_PATH = args.content_path
@@ -83,9 +78,6 @@ EPOCH_PERIOD = config["EPOCH_PERIOD"]
 
 EPOCH_START = args.start
 EPOCH_END = args.end
-# EPOCH_START = 80
-# EPOCH_END = 110
-EPOCH_PERIOD = args.epoch_period
 
 # Training parameter (subject model)
 TRAINING_PARAMETER = config["TRAINING"]
