@@ -370,7 +370,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             final_list = list(set(diff_list).union(set(top_indices)))
             sim_data = tar_train_data[top_indices]
 
-            print(len(high_dim_prediction_flip_list),len(high_dim_border_flip_list),en(vis_error_list))
+            print(len(high_dim_prediction_flip_list),len(high_dim_border_flip_list),len(vis_error_list))
             ##### construct the spitial complex
             spatial_cons = TrustvisTemporalSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net, diff_data=diff_data, sim_data=sim_data)
             edge_to, edge_from, probs, pred_probs, feature_vectors, attention, knn_indices = spatial_cons.construct()
