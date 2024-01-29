@@ -145,7 +145,7 @@ class UmapLoss(nn.Module):
         probabilities_distance = probabilities_distance.to(self.DEVICE)
 
         probabilities_graph = torch.cat(
-            (probs, torch.zeros(batch_size).to(self.DEVICE)), dim=0,
+            (probs, torch.zeros(neg_num).to(self.DEVICE)), dim=0,
         )
 
         probabilities_graph = probabilities_graph.to(device=self.DEVICE)
