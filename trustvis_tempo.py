@@ -184,7 +184,7 @@ PREPROCESS = args.preprocess
 if PREPROCESS:
     data_provider._meta_data()
     if B_N_EPOCHS >0:
-        data_provider._estimate_boundary(LEN // 10, l_bound=L_BOUND)
+        data_provider._gen_boundary(LEN // 10)    
 
 # Define visualization models
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
