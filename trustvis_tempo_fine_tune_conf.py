@@ -206,7 +206,7 @@ _a, _b = find_ab_params(1.0, min_dist)
 projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 
-start_flag = 1
+start_flag = 0
 
 prev_model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
@@ -322,15 +322,17 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
                 confidence_tar_high, _ = torch.max(torch.softmax(torch.from_numpy(new_pred_origin).to(DEVICE), dim=1), dim=1)
                 confidence_tar_low, _ = torch.max(torch.softmax(torch.from_numpy(inv_new_pred_origin).to(DEVICE), dim=1), dim=1)
 
+                print(confidence_tar_high,confidence_tar_low)
                 conf_tar_diff =  torch.abs(confidence_tar_high - confidence_tar_low).to(DEVICE)
-                conf_tar_diff_true = (conf_tar_diff > 0.2)
+                conf_tar_diff_true = (conf_tar_diff > 1.0)
+                print("conf_tar_diff",conf_tar_diff)
 
                 conf_diff_indices = [index for index, value in enumerate(conf_tar_diff) if value]
                 
 
                 critical_set = set(high_dim_prediction_flip_list).union(set(high_dim_border_flip_list))
                 critical_list = list(critical_set.union(set(vis_error_list)))
-                critical_list = list(set(critical_list).union(set(conf_diff_indices)))
+                # critical_list = list(set(critical_list).union(set(conf_diff_indices)))
 
                 npr = find_neighbor_preserving_rate(ref_train_data, tar_train_data, N_NEIGHBORS)
                 k_npr = int(len(npr) * 0.005)

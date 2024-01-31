@@ -495,7 +495,7 @@ class UmapLoss_refine_conf(nn.Module):
         if torch.isnan(margin_loss):
             margin_loss = torch.tensor(0.0).to(margin_loss.device)
 
-        return umap_l, margin_loss, umap_l+margin_loss + 0.1* pred_recon_loss
+        return umap_l, margin_loss, umap_l+margin_loss
 
     def filter_neg(self, neg_pred_from, neg_pred_to, delta=1e-1):
         neg_pred_from = neg_pred_from.cpu().detach().numpy()

@@ -283,36 +283,6 @@ print("training pred flip recall ",true_prediction_flip / len(high_dim_predictio
 print("training bon confidence precision", true_border_flip / len(low_dim_border_flip_list)),
 print("training bon confidence recall ", true_border_flip / len(high_dim_border_flip_list))
 
-is_pred_same = (torch.from_numpy(pred).to(DEVICE) == torch.from_numpy(new_pred).to(DEVICE))
-confidence_ref_high, _ = torch.max(torch.softmax(torch.from_numpy(pred_origin).to(DEVICE), dim=1), dim=1)
-confidence_tar_high, _ = torch.max(torch.softmax(torch.from_numpy(new_pred_origin).to(DEVICE), dim=1), dim=1)
-conf_diff_high = torch.abs(confidence_ref_high - confidence_tar_high).to(DEVICE)
-conf_shift_high = is_pred_same & (conf_diff_high > 0.1)
-
-confidence_ref_low, _ = torch.max(torch.softmax(torch.from_numpy(inv_pred_origin).to(DEVICE), dim=1), dim=1)
-confidence_tar_low, _ = torch.max(torch.softmax(torch.from_numpy(inv_new_pred_origin).to(DEVICE), dim=1), dim=1)
-conf_diff_low = torch.abs(confidence_ref_low - confidence_tar_low).to(DEVICE)
-conf_shift_low = is_pred_same & (conf_diff_low > 0.1)
-
-count_high = sum(1 for value in conf_shift_high if value)
-count_low = sum(1 for value in conf_shift_low if value)
-
-conf_ref_diff =  torch.abs(confidence_ref_high - confidence_ref_low).to(DEVICE)
-conf_tar_diff =  torch.abs(confidence_tar_high - confidence_tar_low).to(DEVICE)
-conf_shift_true = conf_shift_high & conf_shift_low & (conf_ref_diff < 0.1) & (conf_tar_diff < 0.1)
-count_true = sum(1 for value in conf_shift_true if value)
-if count_low != 0:
-    conf_shift_precision = count_true / count_low
-else:
-    conf_shift_precision = "NA"
-if count_high != 0:
-    conf_shift_recall = count_true / count_high
-else:
-    conf_shift_recall = "NA"
-
-print("conf_shift_precision:", conf_shift_precision)
-print("conf_shift_recall:", conf_shift_recall)
-
 critical_list = list(set(high_dim_prediction_flip_list).union(set(high_dim_border_flip_list)))
 print(len(critical_list))
 critical_list = list(set(critical_list).union(set(tar_vis_error_list_)))
@@ -469,35 +439,6 @@ print("testing recall", true_prediction_flip / len(high_dim_prediction_flip_list
 print("testing bon confidence precision",  true_border_flip / len(low_dim_border_flip_list))
 print("testing bon confidence recall", true_border_flip / len(high_dim_border_flip_list))
 
-is_pred_same = (torch.from_numpy(ref_testpred).to(DEVICE) == torch.from_numpy(testpred).to(DEVICE))
-confidence_ref_high, _ = torch.max(torch.softmax(torch.from_numpy(ref_testpred_origin).to(DEVICE), dim=1), dim=1)
-confidence_tar_high, _ = torch.max(torch.softmax(torch.from_numpy(testpred_origin).to(DEVICE), dim=1), dim=1)
-conf_diff_high = torch.abs(confidence_ref_high - confidence_tar_high).to(DEVICE)
-conf_shift_high = is_pred_same & (conf_diff_high > 0.1)
-
-confidence_ref_low, _ = torch.max(torch.softmax(torch.from_numpy(ref_new_testpred_origin).to(DEVICE), dim=1), dim=1)
-confidence_tar_low, _ = torch.max(torch.softmax(torch.from_numpy(new_testpred_origin).to(DEVICE), dim=1), dim=1)
-conf_diff_low = torch.abs(confidence_ref_low - confidence_tar_low).to(DEVICE)
-conf_shift_low = is_pred_same & (conf_diff_low > 0.1)
-
-count_high = sum(1 for value in conf_shift_high if value)
-count_low = sum(1 for value in conf_shift_low if value)
-
-conf_ref_diff =  torch.abs(confidence_ref_high - confidence_ref_low).to(DEVICE)
-conf_tar_diff =  torch.abs(confidence_tar_high - confidence_tar_low).to(DEVICE)
-conf_shift_true = conf_shift_high & conf_shift_low & (conf_ref_diff < 0.1) & (conf_tar_diff < 0.1)
-count_true = sum(1 for value in conf_shift_true if value)
-if count_low != 0:
-    conf_shift_precision = count_true / count_low
-else:
-    conf_shift_precision = "NA"
-if count_high != 0:
-    conf_shift_recall = count_true / count_high
-else:
-    conf_shift_recall = "NA"
-
-print("test_conf_shift_precision:", conf_shift_precision)
-print("test_conf_shift_recall:", conf_shift_recall)
 
 from singleVis.eval.evaluator import Evaluator
 
