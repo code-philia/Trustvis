@@ -21,7 +21,7 @@ from singleVis.edge_dataset import VisDataHandler
 from singleVis.trainer import VISTrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
-from singleVis.spatial_edge_constructor import Trustvis_SpatialEdgeConstructor, TrustvisTemporalSpatialEdgeConstructor
+from singleVis.spatial_edge_constructor import Trustvis_SpatialEdgeConstructor, TrustvisTemporalSpatialEdgeConstructor, TrustvisBorderSpatialEdgeConstructor
 # from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
 
 from singleVis.projector import VISProjector
@@ -270,10 +270,11 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             # else:
             #     fin_gen_border_data = gen_border_data
             t0 = time.time()
-            spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
-            t1 = time.time()
+            # spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
+            spatial_cons = TrustvisBorderSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net, fin_gen_border_data)
             # spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
             edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
+            t1 = time.time()
             start_flag = 0
             optimizer = torch.optim.Adam(model.parameters(), lr=.01, weight_decay=1e-5)
             lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
