@@ -434,7 +434,7 @@ class UmapLoss_refine_conf(nn.Module):
         recon_pred_to_softmax = torch.Tensor(recon_pred_to_softmax.to(self.DEVICE))
         recon_pred_from_softmax = torch.Tensor(recon_pred_from_softmax.to(self.DEVICE))
 
-        pred_recon_loss = torch.mean(torch.pow(torch.cat((pred_from_softmax,pred_to_softmax),dim=0) - torch.cat((recon_pred_from_softmax,recon_pred_to_softmax),dim=0), 2))
+        pred_recon_loss = torch.mean(torch.pow(torch.cat((pred_from_softmax[is_conf_diff],pred_to_softmax[is_conf_diff]),dim=0) - torch.cat((recon_pred_from_softmax[is_conf_diff],recon_pred_to_softmax[is_conf_diff]),dim=0), 2))
         #### umap loss
         distance_embedding = torch.cat(
             (
