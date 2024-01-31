@@ -260,9 +260,11 @@ class Evaluator(EvaluatorAbstractClass):
             prev_iteration = t * self.data_provider.p + self.data_provider.s
             cur_iteration = (t+1) * self.data_provider.p + self.data_provider.s
             prev_data = self.data_provider.train_representation(prev_iteration)
+            prev_data = prev_data.reshape(prev_data.shape[0],prev_data.shape[1])
             prev_embedding = self.projector.batch_project(prev_iteration, prev_data)
 
             curr_data = self.data_provider.train_representation(cur_iteration)
+            curr_data = curr_data.reshape(curr_data.shape[0],curr_data.shape[1])
             curr_embedding = self.projector.batch_project(cur_iteration, curr_data)
 
             pred_origin = self.data_provider.get_pred(prev_iteration, prev_data)
@@ -326,11 +328,15 @@ class Evaluator(EvaluatorAbstractClass):
 
             prev_data_test = self.data_provider.test_representation(prev_iteration)
             prev_data_train = self.data_provider.train_representation(prev_iteration)
+            prev_data_test = prev_data_test.reshape(prev_data_test.shape[0],prev_data_test.shape[1])
+            prev_data_train = prev_data_train.reshape(prev_data_train.shape[0],prev_data_train.shape[1])
             prev_data = np.concatenate((prev_data_train, prev_data_test), axis=0)
             prev_embedding = self.projector.batch_project(prev_iteration, prev_data)
 
             curr_data_test = self.data_provider.test_representation(cur_iteration)
             curr_data_train = self.data_provider.train_representation(cur_iteration)
+            curr_data_test = curr_data_test.reshape(curr_data_test.shape[0],curr_data_test.shape[1])
+            curr_data_train = curr_data_train.reshape(curr_data_train.shape[0],curr_data_train.shape[1])
             curr_data = np.concatenate((curr_data_train, curr_data_test), axis=0)
             curr_embedding = self.projector.batch_project(cur_iteration, curr_data)
 

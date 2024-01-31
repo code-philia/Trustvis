@@ -131,8 +131,8 @@ DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else
 
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
-# projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
-projector = TimeVisProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+# projector = TimeVisProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 n_neighbors = 15
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
