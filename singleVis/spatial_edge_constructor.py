@@ -462,7 +462,122 @@ class Trustvis_SpatialEdgeConstructor(SpatialEdgeConstructor):
         with open(file_path, "w") as f:
             json.dump(ti, f)
 
+from scipy.stats import rankdata
+class TrustvisBorderSpatialEdgeConstructor(SpatialEdgeConstructor):
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors,model, gen_border_data = np.array([])) -> None:
+        super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
+        self.iteration = iteration
+        self.model = model
+        self.gen_border_data = gen_border_data
+    
+    def construct(self):
+        """"
+            baseline complex constructor
+        """
+        train_data = self.data_provider.train_representation(self.iteration)
+        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+        if self.b_n_epochs > 0:
+            border_centers = self.data_provider.border_representation(self.iteration).squeeze()
+            
+            complex, _, _, knn_indices = self._construct_fuzzy_complex(train_data)
+            ## str1
+            bw_complex, _, _, _ = self._construct_boundary_wise_complex(train_data, border_centers)
 
+            edge_to, edge_from, probs = self._construct_step_edge_dataset(complex, bw_complex)
+            feature_vectors = np.concatenate((train_data, border_centers ), axis=0)
+            pred_model = self.data_provider.prediction_function(self.iteration)
+            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)
+            # attention = np.zeros(feature_vectors.shape)
+            pred_probs = probs
+        elif self.b_n_epochs == 0:
+            # feature_vectors = np.copy(train_data)
+            if len(self.gen_border_data) > 0 :
+                al_data = np.concatenate((train_data, self.gen_border_data), axis=0)
+                feature_vectors = np.concatenate((train_data, self.gen_border_data), axis=0)
+                complex_border, _, _, _ = self._construct_boundary_wise_complex(train_data, self.gen_border_data)
+                border_edge_to, border_edge_from, border_probs = self.merge_complex(complex_border, al_data)
+            else:
+                feature_vectors = np.copy(train_data)
+            feature_vectors_pred = self.data_provider.get_pred(self.iteration, feature_vectors)
+            complex, sigmas, rhos, knn_indices = self._construct_fuzzy_complex(train_data)
+            edge_to, edge_from, probs = self._construct_step_edge_dataset(complex, None)
+
+            probs = probs / (probs.max()+1e-3)
+            eliminate_zeros = probs > 1e-3    #1e-3
+            edge_to = edge_to[eliminate_zeros]
+            edge_from = edge_from[eliminate_zeros]
+            probs = probs[eliminate_zeros]
+
+            # feature_vectors = np.concatenate((train_data, self.gen_border_data), axis=0)
+
+            # # print("pred_similarity",pred_similarity)
+            # # weight_pred = np.exp(pred_similarity/sigmas[edge_to])
+            # # print("weight_pred",weight_pred)
+            # # print("weight",weight)
+
+            # # weight = weight * pred_similarity      
+            if len(self.gen_border_data) > 0 :
+                # border_probs *= 0.1
+                border_probs = border_probs / (border_probs.max()+1e-3)
+                eliminate_zeros = border_probs > 1e-3
+                edge_to = np.concatenate((edge_to, border_edge_to[eliminate_zeros]), axis=0)
+                edge_from = np.concatenate((edge_from, border_edge_from[eliminate_zeros]), axis=0)
+                probs = np.concatenate((probs, border_probs[eliminate_zeros]), axis=0)
+                print("gen_border_data:", self.gen_border_data.shape)
+            edge_to_pred = feature_vectors_pred[edge_to]
+            edge_from_pred = feature_vectors_pred[edge_from]
+          
+            pred_similarity = np.einsum('ij,ij->i', edge_to_pred, edge_from_pred) / (
+                np.linalg.norm(edge_to_pred, axis=1) * np.linalg.norm(edge_from_pred, axis=1)
+                )
+            rank_transformed_weights = rankdata(probs, method='average') / len(probs)
+
+            pred_probs = np.where(rank_transformed_weights == 1,1,np.where(pred_similarity < 0, rank_transformed_weights * (1 + pred_similarity),rank_transformed_weights + (1 - rank_transformed_weights) * rank_transformed_weights * pred_similarity))
+            # pred_probs= np.where(probs == 1, 1, probs + (1 - probs) * pred_similarity ** 2)
+            # feature_vectors = np.concatenate((train_data, self.gen_border_data), axis=0)
+            # weight = np.where(weight == 1, 1, np.where(weight <= 1e-3, weight, weight + (1 - weight) * pred_similarity ** 2))
+  
+            pred_model = self.data_provider.prediction_function(self.iteration)
+            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
+            # attention = np.zeros(feature_vectors.shape)
+        else: 
+            raise Exception("Illegal border edges proposion!")
+            
+        return edge_to, edge_from, probs, pred_probs, feature_vectors, attention
+    def record_time(self, save_dir, file_name, operation, t):
+        file_path = os.path.join(save_dir, file_name+".json")
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                ti = json.load(f)
+        else:
+            ti = dict()
+        if operation not in ti.keys():
+            ti[operation] = dict()
+        ti[operation][str(self.iteration)] = t
+        with open(file_path, "w") as f:
+            json.dump(ti, f)
+
+    def merge_complex(self, complex1,train_data):
+        edge_to_1, edge_from_1, weight_1 = self._construct_step_edge_dataset(complex1, None)
+
+        train_data_pred =  self.data_provider.get_pred(self.iteration, train_data).argmax(axis=1)
+
+        pred_edge_to_1 = train_data_pred[edge_to_1]
+        pred_edge_from_1 = train_data_pred[edge_from_1]
+
+        merged_edges = {}
+
+        for i in range(len(edge_to_1)):
+            if pred_edge_to_1[i] != pred_edge_from_1[i]:
+                continue  # Skip this edge if pred_edge_to_1 is not equal to pred_edge_from_1
+            edge = (edge_to_1[i], edge_from_1[i])
+            merged_edges[edge] = weight_1[i]
+
+        merged_edge_to, merged_edge_from, merged_weight = zip(*[
+            (edge[0], edge[1], wgt) for edge, wgt in merged_edges.items()
+        ])
+
+        return np.array(merged_edge_to), np.array(merged_edge_from), np.array(merged_weight)
 
 # class TrustvisSpatialEdgeConstructor(SpatialEdgeConstructor):
 #     def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors, train_data=None, gen_border_data = np.array([])) -> None:
