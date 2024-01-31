@@ -438,7 +438,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=3*LAMBDA1, lambd2=0.0,device=DEVICE)
             optimizer = torch.optim.Adam(model.parameters(), lr=.005, weight_decay=1e-5)
             lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
-            temporal_k -= 1
+            temporal_k -= 2
             t_1= time.time()
             # npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
             t_2= time.time()

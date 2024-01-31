@@ -478,11 +478,11 @@ class UmapLoss_refine_conf(nn.Module):
         
         # print("dynamic marin", margin[~is_pred_same].mean())
         # print("margin", margin.mean().item())
-        if iteration > 6:
-            margin = self.conf_diff_margin(init_margin, is_conf_diff, 
-                                                      edge_to[is_conf_diff],edge_from[is_conf_diff], probs[is_conf_diff],
-                                                      embedding_to[is_conf_diff],embedding_from[is_conf_diff],curr_model,
-                                                      pred_to_softmax[is_conf_diff], pred_from_softmax[is_conf_diff])
+        # if iteration > 8:
+        #     margin = self.conf_diff_margin(init_margin, is_conf_diff, 
+        #                                               edge_to[is_conf_diff],edge_from[is_conf_diff], probs[is_conf_diff],
+        #                                               embedding_to[is_conf_diff],embedding_from[is_conf_diff],curr_model,
+        #                                               pred_to_softmax[is_conf_diff], pred_from_softmax[is_conf_diff])
         
         margin_loss = F.relu(margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
         
