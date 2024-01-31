@@ -416,19 +416,25 @@ class UmapLoss_refine_conf(nn.Module):
         is_conf_diff = (is_pred_same & (conf_diff > 0.1) )
         # print("number of conf diff", torch.sum(is_conf_diff).item())
 
-        recon_pred_to_Res = recon_pred_edge_to.argmax(axis=1)
-        recon_pred_from_Res = recon_pred_edge_from.argmax(axis=1)
+        
+
+
+        pred_recon_to = self.pred_fn(recon_to)
+        pred_recon_from = self.pred_fn(recon_from)
+        
 
 
         temp = 0.001
-        recon_pred_to_softmax = F.softmax(recon_pred_edge_to / temp, dim=-1)
-        recon_pred_from_softmax = F.softmax(recon_pred_edge_from / temp, dim=-1)
+        recon_pred_to_softmax = F.softmax(pred_recon_to / temp, dim=-1)
+        recon_pred_from_softmax = F.softmax(pred_recon_from / temp, dim=-1)
 
         pred_to_softmax = F.softmax(pred_edge_to / temp, dim=-1)
         pred_from_softmax = F.softmax(pred_edge_from / temp, dim=-1)
         
         recon_pred_to_softmax = torch.Tensor(recon_pred_to_softmax.to(self.DEVICE))
         recon_pred_from_softmax = torch.Tensor(recon_pred_from_softmax.to(self.DEVICE))
+
+        pred_recon_loss = torch.mean(torch.pow(torch.cat((pred_from_softmax,pred_to_softmax),dim=0) - torch.cat((recon_pred_from_softmax,recon_pred_to_softmax),dim=0), 2))
         #### umap loss
         distance_embedding = torch.cat(
             (
@@ -472,10 +478,12 @@ class UmapLoss_refine_conf(nn.Module):
         
         # print("dynamic marin", margin[~is_pred_same].mean())
         # print("margin", margin.mean().item())
-        margin = self.conf_diff_margin(init_margin, is_conf_diff, 
+        if iteration > 6:
+            margin = self.conf_diff_margin(init_margin, is_conf_diff, 
                                                       edge_to[is_conf_diff],edge_from[is_conf_diff], probs[is_conf_diff],
                                                       embedding_to[is_conf_diff],embedding_from[is_conf_diff],curr_model,
                                                       pred_to_softmax[is_conf_diff], pred_from_softmax[is_conf_diff])
+        
         margin_loss = F.relu(margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
         
         umap_l = torch.mean(ce_loss).to(self.DEVICE) 
@@ -484,7 +492,7 @@ class UmapLoss_refine_conf(nn.Module):
         if torch.isnan(margin_loss):
             margin_loss = torch.tensor(0.0).to(margin_loss.device)
 
-        return umap_l, margin_loss, umap_l+margin_loss
+        return umap_l, margin_loss, umap_l+margin_loss+ 0.1 * pred_recon_loss
 
     def filter_neg(self, neg_pred_from, neg_pred_to, delta=1e-1):
         neg_pred_from = neg_pred_from.cpu().detach().numpy()
@@ -571,6 +579,7 @@ class UmapLoss_refine_conf(nn.Module):
             param.requires_grad = True
 
         dynamic_margin[is_conf_diff] = final_margin.to(self.DEVICE)
+
 
 
 
