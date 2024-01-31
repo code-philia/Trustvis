@@ -112,7 +112,7 @@ VIS_MODEL_NAME = 'trustvis_tempo_fine_tune_conf' ### saved_as VIS_MODEL_NAME.pth
 
 
 # Define hyperparameters
-GPU_ID = 1
+GPU_ID = 0
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
 print("device", DEVICE)
 
@@ -318,10 +318,19 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
                 high_dim_prediction_flip_list = critical_prediction_flip(pred, new_pred)
                 high_dim_border_flip_list = critical_border_flip(pred_origin, new_pred_origin)
+
+                confidence_tar_high, _ = torch.max(torch.softmax(torch.from_numpy(new_pred_origin).to(DEVICE), dim=1), dim=1)
+                confidence_tar_low, _ = torch.max(torch.softmax(torch.from_numpy(inv_new_pred_origin).to(DEVICE), dim=1), dim=1)
+
+                conf_tar_diff =  torch.abs(confidence_tar_high - confidence_tar_low).to(DEVICE)
+                conf_tar_diff_true = (conf_tar_diff > 0.2)
+
+                conf_diff_indices = [index for index, value in enumerate(conf_tar_diff) if value]
                 
 
                 critical_set = set(high_dim_prediction_flip_list).union(set(high_dim_border_flip_list))
                 critical_list = list(critical_set.union(set(vis_error_list)))
+                critical_list = list(set(critical_list).union(set(conf_diff_indices)))
 
                 npr = find_neighbor_preserving_rate(ref_train_data, tar_train_data, N_NEIGHBORS)
                 k_npr = int(len(npr) * 0.005)
@@ -384,8 +393,21 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
                 # inv_low_indices = torch.nonzero(inv_similarity <= 0.2, as_tuple=True)[0]
 
                 # critical_list = list(critical_set)
+
+                confidence_tar_high, _ = torch.max(torch.softmax(torch.from_numpy(new_pred_origin).to(DEVICE), dim=1), dim=1)
+                confidence_tar_low, _ = torch.max(torch.softmax(torch.from_numpy(inv_new_pred_origin).to(DEVICE), dim=1), dim=1)
+                confidence_tar_low_, _ = torch.max(torch.softmax(torch.from_numpy(inv_new_pred_origin_).to(DEVICE), dim=1), dim=1)
+
+                conf_tar_diff =  torch.abs(confidence_tar_high - confidence_tar_low).to(DEVICE)
+                conf_tar_diff_ =  torch.abs(confidence_tar_high - confidence_tar_low).to(DEVICE)
+
+                conf_diff = (conf_tar_diff > 0.2) | (conf_tar_diff_ > 0.2)
+
+                conf_diff_indices = [index for index, value in enumerate(conf_diff) if value]
+
                 critical_list = list(set(vis_error_list).union(set(npr_low_indices.tolist())))
                 critical_list = list(set(critical_list).union(set(inv_low_indices.tolist())))
+                critical_list = list(set(critical_list).union(set(conf_diff_indices)))
                 critical_data = tar_train_data[critical_list]
             similarity = F.cosine_similarity(torch.from_numpy(pred_origin).to(device=DEVICE), torch.from_numpy(new_pred_origin).to(device=DEVICE))
             # 计算要找的值的数量（百分之一长度）
