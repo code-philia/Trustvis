@@ -15,13 +15,12 @@ import torch
 import json
 
 from scipy import stats as stats
-from singleVis.projector import DVIProjector
+from singleVis.projector import VISProjector
 
 import argparse
 parser = argparse.ArgumentParser(description='Process hyperparameters...')
 parser.add_argument('--content_path', type=str)
-parser.add_argument('--start', type=int,default=1)
-parser.add_argument('--end', type=int,default=3)
+parser.add_argument('--vismodel', type=str)
 parser.add_argument('--epoch' , type=int,default=100)
 args = parser.parse_args()
 # CONTENT_PATH = "/home/yiming/EXP/CIFAR10_Clean"
@@ -44,8 +43,8 @@ PREPROCESS = config["VISUALIZATION"]["PREPROCESS"]
 GPU_ID = config["GPU"]
 # REF_EPOCH = args.epoch
 # TAR_EPOCH = REF_EPOCH + 1
-EPOCH_START = args.start
-EPOCH_END = args.end
+EPOCH_START = args.epoch
+EPOCH_END = args.epoch
 EPOCH_PERIOD = config["EPOCH_PERIOD"]
 
 # Training parameter (subject model)
@@ -66,23 +65,9 @@ N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
 
-# VIS_MODEL_NAME = 'trustvis_sk'
-# VIS_MODEL_NAME = 'dvi'
-# TAR_VIS_MODEL_NAME = 'dvi_overfit_all_transfer'
-# TAR_VIS_MODEL_NAME = 'trustbase_gen_border_conf_margin_new'
-# VIS_MODEL_NAME = 'trustbase_gen_border_conf_margin_new'
-# TAR_VIS_MODEL_NAME = 'trustbase_gen_border'
-# VIS_MODEL_NAME = 'trustbase_gen_border'
-VIS_MODEL_NAME = 'trustvis_modi'
-# VIS_MODEL_NAME = 'trustvis_tempo'
-# TAR_VIS_MODEL_NAME = 'dvi_probs_pred'
-# VIS_MODEL_NAME = 'dvi_probs_pred'
-# TAR_VIS_MODEL_NAME = 'dvi'
-VIS_MODEL_NAME = 'dvi_eval'
-# VIS_MODEL_NAME = 'vis'
-# VIS_MODEL_NAME = 'trustvis_remove_sampling'
-# VIS_MODEL_NAME = 'trustvis_tempo_ablation'
-# VIS_MODEL_NAME = 'base_dvi'
+
+VIS_MODEL_NAME = args.vismodel
+
 EVALUATION_NAME = VISUALIZATION_PARAMETER["EVALUATION_NAME"]
 
 # Define hyperparameters
@@ -90,7 +75,7 @@ DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else
 
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
-projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 # projector = TimeVisProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 
@@ -102,6 +87,11 @@ import Model.model as subject_model
 net = eval("subject_model.{}()".format(NET))
 from singleVis.data import NormalDataProvider
 data_provider = NormalDataProvider(CONTENT_PATH, net, EPOCH_START, EPOCH_END, 1, device=DEVICE, epoch_name='Epoch',classes=CLASSES,verbose=1)
+
+train_border_path = os.path.join(CONTENT_PATH, 'Model','Epoch_{}'.format(EPOCH_START), 'border_centers.npy' )
+test_border_path = os.path.join(CONTENT_PATH, 'Model','Epoch_{}'.format(EPOCH_START), 'test_border_centers.npy' )
+if not os.path.exists(train_border_path) or not os.path.exists(test_border_path):
+    data_provider._gen_boundary(LEN // 10)    
 
 from singleVis.eval.evaluator import Evaluator
 evaluator = Evaluator(data_provider, projector)
