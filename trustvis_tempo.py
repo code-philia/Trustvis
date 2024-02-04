@@ -273,7 +273,10 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
             # spatial_cons = TrustvisBorderSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net, fin_gen_border_data)
             # spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
+
             edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
+            np.save('probs.npy', probs)
+            np.save('pred_probs.npy', pred_probs)
             t1 = time.time()
             start_flag = 0
             optimizer = torch.optim.Adam(model.parameters(), lr=.01, weight_decay=1e-5)

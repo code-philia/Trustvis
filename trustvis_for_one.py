@@ -183,6 +183,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
     edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
 
+
     t1 = time.time()
 
     print('complex-construct:', t1-t0)

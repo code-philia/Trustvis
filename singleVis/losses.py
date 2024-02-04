@@ -407,24 +407,29 @@ class UmapLoss_refine_conf(nn.Module):
         pred_edge_from = pred_edge_from.to(self.DEVICE)
 
 
+        pred_recon_to = self.pred_fn(recon_to)
+        pred_recon_from = self.pred_fn(recon_from)
+
         ###### calculate the confidence
         confidence_edge_to, _ = torch.max(torch.softmax(pred_edge_to, dim=1), dim=1)
         confidence_edge_from,_ = torch.max(torch.softmax(pred_edge_from, dim=1), dim=1)
+        recon_confidence_edge_to, _ = torch.max(torch.softmax(pred_recon_to, dim=1), dim=1)
+        recon_confidence_edge_from,_ = torch.max(torch.softmax(pred_recon_from, dim=1), dim=1)
         conf_diff = torch.abs(confidence_edge_to - confidence_edge_from).to(self.DEVICE)
         # print("conf_diff",conf_diff)
 
+        conf_diff_ = torch.abs(confidence_edge_to - confidence_edge_from).mean().to(self.DEVICE) + torch.abs(recon_confidence_edge_to - recon_confidence_edge_from).mean().to(self.DEVICE)
+       
         is_conf_diff = (is_pred_same & (conf_diff > 0.1) )
         # print("number of conf diff", torch.sum(is_conf_diff).item())
 
         
 
 
-        pred_recon_to = self.pred_fn(recon_to)
-        pred_recon_from = self.pred_fn(recon_from)
         
 
 
-        temp = 0.001
+        temp = 1
         recon_pred_to_softmax = F.softmax(pred_recon_to / temp, dim=-1)
         recon_pred_from_softmax = F.softmax(pred_recon_from / temp, dim=-1)
 
@@ -434,7 +439,7 @@ class UmapLoss_refine_conf(nn.Module):
         recon_pred_to_softmax = torch.Tensor(recon_pred_to_softmax.to(self.DEVICE))
         recon_pred_from_softmax = torch.Tensor(recon_pred_from_softmax.to(self.DEVICE))
 
-        pred_recon_loss = torch.mean(torch.pow(torch.cat((pred_from_softmax,pred_to_softmax),dim=0) - torch.cat((recon_pred_from_softmax,recon_pred_to_softmax),dim=0), 2))
+        pred_recon_loss = torch.mean(torch.pow(torch.cat((pred_from_softmax[is_conf_diff],pred_to_softmax[is_conf_diff]),dim=0) - torch.cat((recon_pred_from_softmax[is_conf_diff],recon_pred_to_softmax[is_conf_diff]),dim=0), 2))
         #### umap loss
         distance_embedding = torch.cat(
             (
@@ -478,24 +483,28 @@ class UmapLoss_refine_conf(nn.Module):
         
         # print("dynamic marin", margin[~is_pred_same].mean())
         # print("margin", margin.mean().item())
+        cosine_direction_loss = torch.tensor(0.0).to(self.DEVICE)
+        
         """ add margin to conf_diff"""
-        # if iteration > 8:
-        #     margin = self.conf_diff_margin(init_margin, is_conf_diff, 
-        #                                               edge_to[is_conf_diff],edge_from[is_conf_diff], probs[is_conf_diff],
-        #                                               embedding_to[is_conf_diff],embedding_from[is_conf_diff],curr_model,
-        #                                               pred_to_softmax[is_conf_diff], pred_from_softmax[is_conf_diff])
+        if iteration > 6:
+            margin,cosine_direction_loss = self.conf_diff_margin(init_margin, is_conf_diff, 
+                                                      edge_to[is_conf_diff],edge_from[is_conf_diff], probs[is_conf_diff],
+                                                      embedding_to[is_conf_diff],embedding_from[is_conf_diff],curr_model,
+                                                      pred_to_softmax[is_conf_diff], pred_from_softmax[is_conf_diff])
         # margin[is_conf_diff] = positive_distance_mean + (negative_distance_mean - positive_distance_mean) * (conf_diff[is_conf_diff])
-        margin[is_conf_diff] = positive_distance_mean * 0.8
+        margin[is_conf_diff] = positive_distance_mean
         margin_loss = F.relu(margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
 
         
         umap_l = torch.mean(ce_loss).to(self.DEVICE) 
         margin_loss = margin_loss.to(self.DEVICE)
 
+        cosine_direction_loss = cosine_direction_loss.mean().to(self.DEVICE) 
+        print("conf_diff",conf_diff_,cosine_direction_loss)
         if torch.isnan(margin_loss):
             margin_loss = torch.tensor(0.0).to(margin_loss.device)
 
-        return umap_l, margin_loss, umap_l+margin_loss
+        return umap_l, cosine_direction_loss, umap_l+margin_loss + cosine_direction_loss
 
     def filter_neg(self, neg_pred_from, neg_pred_to, delta=1e-1):
         neg_pred_from = neg_pred_from.cpu().detach().numpy()
@@ -532,10 +541,11 @@ class UmapLoss_refine_conf(nn.Module):
 
 
         # use learning rate approximate the y_next
-        next_emb_to = emb_to - 1 * grad
-        next_emb_from = emb_from - 1 * grad_emb_from
+        next_emb_to = emb_to - 0.1 * grad
+        next_emb_from = emb_from - 0.1 * grad_emb_from
 
         """ strategy 3 """
+        """ start from [i,j]"""
         metrix = torch.tensor(torch.cat((next_emb_to, next_emb_from),dim=0), dtype=torch.float, requires_grad=True)
 
         for param in curr_model.parameters():
@@ -543,19 +553,22 @@ class UmapLoss_refine_conf(nn.Module):
 
 
         # loss = pred_from_softmax - torch.mean(torch.pow(pred_from_softmax - F.softmax(inv / 0.01, dim=-1), 2),1)
-        optimizer = optim.Adam([metrix], lr=0.01)
-        # 训练循环
-        for epoch in range(20):
+        optimizer = optim.Adam([metrix], lr=0.1)
+        # 
+        for epoch in range(100):
             optimizer.zero_grad() 
             inv = curr_model.decoder(metrix) 
             inv_pred = self.pred_fn(inv)
             """ strategy 3 """
-            inv_pred_softmax = F.softmax(inv_pred / 0.001, dim=-1)
+            inv_pred_softmax = F.softmax(inv_pred / 1, dim=-1)
             loss = 10 * torch.mean(torch.pow(torch.cat((pred_from_softmax,pred_to_softmax),dim=0) - inv_pred_softmax, 2)) + torch.mean(torch.pow(inv - torch.cat((edge_from, edge_to),dim=0), 2))
-
+            # loss = torch.mean(torch.pow(torch.cat((pred_from_softmax,pred_to_softmax),dim=0)- inv_pred_softmax, 2))
             # bp
             loss.backward(retain_graph=True)         
             optimizer.step()
+
+            if epoch % 50 == 0:
+                print(f'Epoch {epoch}, Loss: {loss.item()}')
 
         
         """strategy 1 or 2"""
@@ -564,11 +577,19 @@ class UmapLoss_refine_conf(nn.Module):
 
         """strategy 3 start"""
         margin = torch.norm( torch.cat((emb_to, emb_from),dim=0) - metrix, dim=1)
+        # random_metrix = torch.rand((len(emb_to)+len(emb_from)), 2).to(self.DEVICE)
+        numerator = (torch.cat((emb_to, emb_from),dim=0) - metrix) * (torch.cat((emb_to, emb_from),dim=0)-torch.cat((emb_from, emb_to),dim=0))
+        denominator = torch.norm(torch.cat((emb_to, emb_from),dim=0) - metrix) * torch.norm(torch.cat((emb_to, emb_from),dim=0)-torch.cat((emb_from, emb_to),dim=0))
+        cosine_loss_direction = 1 - numerator /denominator
+ 
+
         total_length = margin.size(0)
         half_length = total_length // 2
         margin_to = margin[:half_length]
         margin_from = margin[half_length:]    
         final_margin =  torch.max(margin_to, margin_from)
+
+
         """strategy 3 end """
 
         # final_margin = torch.where(final_margin < positive_distance_mean.item(), dynamic_margin[~is_pred_same], final_margin)
@@ -586,7 +607,7 @@ class UmapLoss_refine_conf(nn.Module):
 
 
 
-        return dynamic_margin
+        return dynamic_margin,cosine_loss_direction
     
     def newton_step_with_regularization(self, edge_to_idx, edge_from_idx, dynamic_margin, is_pred_same, edge_to, edge_from, probs, emb_to, emb_from, curr_model, pred_to_softmax, pred_from_softmax, positive_distance_mean, negative_distance_mean, epsilon=1e-4):
         # Ensure the input tensors require gradient
@@ -677,7 +698,7 @@ class UmapLoss_refine_conf(nn.Module):
         # loss = pred_from_softmax - torch.mean(torch.pow(pred_from_softmax - F.softmax(inv / 0.01, dim=-1), 2),1)
         optimizer = optim.Adam([metrix], lr=0.01)
         # 训练循环
-        for epoch in range(20):
+        for epoch in range(100):
             optimizer.zero_grad() 
             inv = curr_model.decoder(metrix) 
             inv_pred = self.pred_fn(inv)
@@ -702,7 +723,8 @@ class UmapLoss_refine_conf(nn.Module):
                 # loss = 100 * torch.mean(torch.pow(pred_from_softmax - inv_pred_to_softmax, 2)) + torch.mean(torch.pow(inv - edge_from, 2)) + 0.1 * torch.mean(torch.pow(emb_to - metrix, 2))
             """ strategy 3 """
             inv_pred_softmax = F.softmax(inv_pred / 0.001, dim=-1)
-            loss = 10 * torch.mean(torch.pow(torch.cat((pred_from_softmax,pred_to_softmax),dim=0) - inv_pred_softmax, 2)) + torch.mean(torch.pow(inv - torch.cat((edge_from, edge_to),dim=0), 2))
+            loss = 10 * torch.mean(torch.pow(torch.cat((pred_from_softmax,pred_to_softmax),dim=0) - inv_pred_softmax, 2)) 
+            + torch.mean(torch.pow(inv - torch.cat((edge_from, edge_to),dim=0), 2))
 
             # bp
             loss.backward(retain_graph=True)         
@@ -711,8 +733,8 @@ class UmapLoss_refine_conf(nn.Module):
             # if loss.item() < 0.1:
             #     print(f"Stopping early at epoch {epoch} as loss dropped below 0.1")
             #     break
-            # if epoch % 500 == 0:
-                # print(f'Epoch {epoch}, Loss: {loss.item()}')
+            if epoch % 20 == 0:
+                print(f'Epoch {epoch}, Loss: {loss.item()}')
         
         """strategy 1 or 2"""
 
@@ -720,6 +742,12 @@ class UmapLoss_refine_conf(nn.Module):
 
         """strategy 3 start"""
         margin = torch.norm( torch.cat((emb_to, emb_from),dim=0) - metrix, dim=1)
+        # yi: torch.cat((emb_to, emb_from),dim=0)
+        # yj torch.cat((emb_from, emb_to),dim=0)
+        numerator = (torch.cat((emb_to, emb_from),dim=0) - metrix) * (torch.cat((emb_to, emb_from),dim=0)-torch.cat((emb_from, emb_to),dim=0))
+        denominator = torch.norm(torch.cat((emb_to, emb_from),dim=0) - metrix) * torch.norm(torch.cat((emb_to, emb_from),dim=0)-torch.cat((emb_from, emb_to),dim=0))
+   
+        cosine_loss_direction = 1 - numerator /denominator
         total_length = margin.size(0)
         half_length = total_length // 2
         margin_to = margin[:half_length]
@@ -741,7 +769,7 @@ class UmapLoss_refine_conf(nn.Module):
 
 
 
-        return dynamic_margin
+        return dynamic_margin, cosine_loss_direction
 
 
 class DVILoss(nn.Module):
