@@ -21,6 +21,7 @@ from singleVis.edge_dataset import VisDataHandler
 from singleVis.trainer import VISTrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
+from trustVis.sampeling import CriticalSampling
 from singleVis.spatial_edge_constructor import Trustvis_SpatialEdgeConstructor, TrustvisTemporalSpatialEdgeConstructor, TrustvisBorderSpatialEdgeConstructor
 # from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
 
@@ -285,112 +286,14 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         else:
             recon_loss_fn = ReconstructionLoss(beta=1.0)
             umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, data_provider, iteration,net, 100, _a, _b,  repulsion_strength=1.0)
-            
+            c_sampling = CriticalSampling(projector,data_provider,iteration,DEVICE)
+            ref_train_data, tar_train_data, pred_origin, pred, inv_pred_origin, inv_pred,new_pred,new_pred_origin, inv_new_pred = c_sampling.get_basic()
             if temporal_k == 2:
-                ref_train_data = data_provider.train_representation(iteration-1).squeeze()
-                # ref_train_data = ref_train_data.reshape(ref_train_data.shape[0],ref_train_data.shape[1])
-                tar_train_data = data_provider.train_representation(iteration).squeeze()
-                # tar_train_data = ref_train_data.reshape(tar_train_data.shape[0],tar_train_data.shape[1])
-                
-                pred_origin = data_provider.get_pred(iteration-1, ref_train_data)
-                pred = pred_origin.argmax(axis=1)
-
-                embedding_ref = projector.batch_project(iteration-1, ref_train_data)
-                inv_ref_data = projector.batch_inverse(iteration-1, embedding_ref)
-
-                inv_pred_origin = data_provider.get_pred(iteration-1, inv_ref_data)
-                inv_pred = inv_pred_origin.argmax(axis=1)
-
-                vis_error_list = []
-                for i in range(len(pred)):
-                    if pred[i] != inv_pred[i]:
-                        vis_error_list.append(i)
-
-                embedding_tar = projector.batch_project(iteration-1, tar_train_data)
-                inv_tar_data = projector.batch_inverse(iteration-1, embedding_tar)
-
-                new_pred_origin = data_provider.get_pred(iteration, tar_train_data)
-                new_pred = new_pred_origin.argmax(axis=1)
-
-                inv_new_pred_origin = data_provider.get_pred(iteration, inv_tar_data)
-                inv_new_pred = inv_new_pred_origin.argmax(axis=1)
-
-                # vis_error_list = []
-                for i in range(len(pred)):
-                    if new_pred[i] != inv_new_pred[i]:
-                        vis_error_list.append(i)
-
-                high_dim_prediction_flip_list = critical_prediction_flip(pred, new_pred)
-                high_dim_border_flip_list = critical_border_flip(pred_origin, new_pred_origin)
-                
-
-                critical_set = set(high_dim_prediction_flip_list).union(set(high_dim_border_flip_list))
-                critical_list = list(critical_set.union(set(vis_error_list)))
-
-                npr = find_neighbor_preserving_rate(ref_train_data, tar_train_data, N_NEIGHBORS)
-                k_npr = int(len(npr) * 0.005)
-                # 使用 topk 函数找到最小的前 k 个值及其索引
-                npr_low_values, npr_low_indices = torch.topk(torch.from_numpy(npr).to(device=DEVICE), k_npr, largest=False)
-                # npr_low_indices = torch.nonzero(torch.from_numpy(npr).to(device=DEVICE) <= 0.4, as_tuple=True)[0]
-
-                inv_similarity = F.cosine_similarity(torch.from_numpy(pred_origin).to(device=DEVICE), torch.from_numpy(inv_pred_origin).to(device=DEVICE))
-                # 计算要找的值的数量（百分之一长度）
-                k_err = int(len(inv_similarity) * 0.005)
-                # 使用 topk 函数找到最大的前 k 个值及其索引
-                inv_low_values, inv_low_indices = torch.topk(inv_similarity, k_err, largest=False)
-                # inv_low_indices = torch.nonzero(inv_similarity <= 0.2, as_tuple=True)[0]
-
-                # critical_list = list(critical_set)
-                critical_list = list(set(critical_list).union(set(npr_low_indices.tolist())))
-                critical_list = list(set(critical_list).union(set(inv_low_indices.tolist())))
-                critical_data = tar_train_data[critical_list]
-                # print(len(critical_list))
+                critical_list, critical_data = c_sampling.get_critical(withCritical = True)
             else:
-                tar_train_data = data_provider.train_representation(iteration).squeeze()
+                critical_list, critical_data = c_sampling.get_critical(withCritical = False)
 
-                embedding_tar = projector.batch_project(iteration-1, tar_train_data)
-                inv_tar_data = projector.batch_inverse(iteration-1, embedding_tar)
 
-                new_pred_origin = data_provider.get_pred(iteration, tar_train_data)
-                new_pred = new_pred_origin.argmax(axis=1)
-
-                inv_new_pred_origin = data_provider.get_pred(iteration, inv_tar_data)
-                inv_new_pred = inv_new_pred_origin.argmax(axis=1)
-
-                embedding_tar_ = projector.batch_project(iteration, tar_train_data)
-                inv_tar_data_ = projector.batch_inverse(iteration, embedding_tar_)
-
-                inv_new_pred_origin_ = data_provider.get_pred(iteration, inv_tar_data_)
-                inv_new_pred_ = inv_new_pred_origin_.argmax(axis=1)
-
-                vis_error_list = []
-                for i in range(len(new_pred)):
-                    if new_pred[i] != inv_new_pred[i]:
-                        vis_error_list.append(i)
-
-                for i in range(len(new_pred)):
-                    if new_pred[i] != inv_new_pred_[i]:
-                        vis_error_list.append(i)
-
-                # critical_list = list(critical_set.union(set(vis_error_list)))
-
-                npr = find_neighbor_preserving_rate(ref_train_data, tar_train_data, N_NEIGHBORS)
-                k_npr = int(len(npr) * 0.005)
-                # 使用 topk 函数找到最小的前 k 个值及其索引
-                npr_low_values, npr_low_indices = torch.topk(torch.from_numpy(npr).to(device=DEVICE), k_npr, largest=False)
-                # npr_low_indices = torch.nonzero(torch.from_numpy(npr).to(device=DEVICE) <= 0.4, as_tuple=True)[0]
-
-                inv_similarity = F.cosine_similarity(torch.from_numpy(new_pred_origin).to(device=DEVICE), torch.from_numpy(inv_new_pred_origin_).to(device=DEVICE))
-                # 计算要找的值的数量（百分之一长度）
-                k_err = int(len(inv_similarity) * 0.005)
-                # 使用 topk 函数找到最大的前 k 个值及其索引
-                inv_low_values, inv_low_indices = torch.topk(inv_similarity, k_err, largest=False)
-                # inv_low_indices = torch.nonzero(inv_similarity <= 0.2, as_tuple=True)[0]
-
-                # critical_list = list(critical_set)
-                critical_list = list(set(vis_error_list).union(set(npr_low_indices.tolist())))
-                critical_list = list(set(critical_list).union(set(inv_low_indices.tolist())))
-                critical_data = tar_train_data[critical_list]
             similarity = F.cosine_similarity(torch.from_numpy(pred_origin).to(device=DEVICE), torch.from_numpy(new_pred_origin).to(device=DEVICE))
             # 计算要找的值的数量（百分之一长度）
             k = int(len(similarity) * 0.2)
