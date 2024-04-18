@@ -297,12 +297,13 @@ class BaseTrainer(SingleVisTrainer):
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
 
+import numpy as np
 class VISTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader,DEVICE):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
     
     
-    def train_step(self,data_provider,iteration,epoch):
+    def train_step(self,data_provider,iteration,epoch,ifFreeze):
         
         projector = PROCESSProjector(self.model, data_provider.content_path, '', self.DEVICE)
         evaluator = Evaluator(data_provider, projector)
@@ -311,6 +312,12 @@ class VISTrainer(SingleVisTrainer):
 
         self.model = self.model.to(device=self.DEVICE)
         self.model.train()
+        
+        if ifFreeze:
+            for name, param in self.model.named_parameters():
+                if 'decoder' in name:  # assuming 'decoder' in the name for decoder components
+                    print("freezed")
+                    param.requires_grad = False
         all_loss = []
         umap_losses = []
         recon_losses = []
@@ -321,6 +328,7 @@ class VISTrainer(SingleVisTrainer):
 
         train_data = data_provider.train_representation(iteration)
         train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+  
 
         recon_train_data = self.model(torch.Tensor(train_data).to(self.DEVICE), torch.Tensor(train_data).to(self.DEVICE))['recon'][0]
         recon_pred = data_provider.get_pred(iteration, recon_train_data.detach().cpu().numpy())
@@ -360,13 +368,13 @@ class VISTrainer(SingleVisTrainer):
                                                                 sum(all_loss) / len(all_loss)))
         return self.loss
     
-    def train(self, PATIENT, MAX_EPOCH_NUMS, data_provider, iteration):
+    def train(self, PATIENT, MAX_EPOCH_NUMS, data_provider, iteration, ifFreeze=False):
         patient = PATIENT
         time_start = time.time()
         for epoch in range(MAX_EPOCH_NUMS):
             print("====================\nepoch:{}\n===================".format(epoch+1))
             prev_loss = self.loss
-            loss = self.train_step(data_provider, iteration,epoch)
+            loss = self.train_step(data_provider, iteration,epoch,ifFreeze)
             self.lr_scheduler.step()
             # early stop, check whether converge or not
             if prev_loss - loss < 5E-3:

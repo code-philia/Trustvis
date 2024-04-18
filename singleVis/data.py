@@ -163,6 +163,51 @@ class NormalDataProvider(DataProvider):
         del training_data
         del testing_data
         gc.collect()
+    
+    def _meta_adv_data(self):
+        time_inference = list()
+
+
+        for n_epoch in range(self.s, self.e + 1, self.p):
+            t_s = time.time()
+
+            adv_location = os.path.join(self.model_path, "{}_{:d}".format(self.epoch_name, n_epoch), "adv_examples.pth")
+            adv_samples = torch.load(adv_location,map_location="cpu").to(self.DEVICE)
+
+            model_location = os.path.join(self.model_path, "{}_{:d}".format(self.epoch_name, n_epoch), "subject_model.pth")
+            self.model.load_state_dict(torch.load(model_location, map_location=torch.device("cpu")),strict=False)
+            self.model = self.model.to(self.DEVICE)
+            self.model.eval()
+
+            repr_model = self.feature_function(n_epoch)
+            # repr_model = torch.nn.Sequential(*(list(self.model.children())[:self.split]))
+
+            data_pool_representation = batch_run(repr_model, adv_samples)
+            location = os.path.join(self.model_path, "{}_{:d}".format(self.epoch_name, n_epoch), "adv_rep.npy")
+            np.save(location, data_pool_representation)
+
+            t_e = time.time()
+            time_inference.append(t_e-t_s)
+            if self.verbose > 0:
+                print("Finish inferencing data for Epoch {:d}...".format(n_epoch))
+        print(
+            "Average time for inferencing data: {:.4f}".format(sum(time_inference) / len(time_inference)))
+
+        # save result
+        save_dir = os.path.join(self.model_path, "time.json")
+        if not os.path.exists(save_dir):
+            evaluation = dict()
+        else:
+            f = open(save_dir, "r")
+            evaluation = json.load(f)
+            f.close()
+        evaluation["data_inference"] = round(sum(time_inference) / len(time_inference), 3)
+        with open(save_dir, 'w') as f:
+            json.dump(evaluation, f)
+
+        del adv_samples
+        # del testing_data
+        gc.collect()
 
     def _estimate_boundary(self, num, l_bound):
         '''

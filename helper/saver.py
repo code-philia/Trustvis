@@ -14,7 +14,7 @@ import argparse
 from singleVis.SingleVisualizationModel import VisModel
 from singleVis.data import NormalDataProvider
 
-from singleVis.projector import DVIProjector
+from singleVis.projector import VISProjector
 
 ########################################################################################################################
 #                                                     DVI PARAMETERS                                                   #
@@ -42,7 +42,7 @@ parser.add_argument('--start', type=int,default=1)
 parser.add_argument('--end', type=int,default=3)
 parser.add_argument('--epoch_period', type=int,default=1)
 parser.add_argument('--preprocess', type=int,default=0)
-parser.add_argument('--name',type=str,default='proxy')
+parser.add_argument('--name',type=str,default='trustvis_tempo')
 args = parser.parse_args()
 
 CONTENT_PATH = args.content_path
@@ -103,7 +103,7 @@ data_provider = NormalDataProvider(CONTENT_PATH, net, EPOCH_START, EPOCH_END, EP
 # Define visualization models
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 # Define Projector
-projector = DVIProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
     
 
 ########################################################################################################################

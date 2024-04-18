@@ -11,6 +11,29 @@ from sklearn.neighbors import KDTree
 from sklearn.metrics import pairwise_distances
 from scipy import stats as stats
 
+def _construct_fuzzy_complex(train_data, metric="euclidean"):
+    # """
+    # construct a vietoris-rips complex
+    # """
+    # number of trees in random projection forest
+    n_trees = min(64, 5 + int(round((train_data.shape[0]) ** 0.5 / 20.0)))
+    # max number of nearest neighbor iters to perform
+    n_iters = max(5, int(round(np.log2(train_data.shape[0]))))
+    # distance metric
+    # # get nearest neighbors
+    
+    nnd = NNDescent(
+        train_data,
+        n_neighbors=15,
+        metric=metric,
+        n_trees=n_trees,
+        n_iters=n_iters,
+        max_candidates=60,
+        verbose=True
+    )
+    knn_indices, knn_dists = nnd.neighbor_graph
+    return knn_indices
+
 def mixup_bi(model, image1, image2, label, target_cls, device, diff=0.1, max_iter=8, l_bound=0.8):
     '''Get BPs based on mixup method, fast
     :param model: subject model

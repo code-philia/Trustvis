@@ -22,18 +22,18 @@ from singleVis.trainer import VISTrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
 from trustVis.sampeling import CriticalSampling
-from singleVis.spatial_edge_constructor import Trustvis_SpatialEdgeConstructor, TrustvisTemporalSpatialEdgeConstructor, TrustvisBorderSpatialEdgeConstructor
-# from singleVis.spatial_skeleton_edge_constructor import ProxyBasedSpatialEdgeConstructor
+from singleVis.spatial_edge_constructor import Trustvis_SpatialEdgeConstructor, TrustvisTemporalSpatialEdgeConstructor
+
+from singleVis.utils import _construct_fuzzy_complex
 
 from singleVis.projector import VISProjector
-from singleVis.utils import find_neighbor_preserving_rate
-from sklearn.neighbors import NearestNeighbors
+
 import torch.nn.functional as F
 ########################################################################################################################
 #                                                      PARAMETERS                                                   #
 ########################################################################################################################
 """This serve as an example of DeepVisualInsight implementation in pytorch."""
-VIS_METHOD = "DVI" # DeepVisualInsight
+VIS_METHOD = "DVI" #
 
 ########################################################################################################################
 #                                                     LOAD PARAMETERS                                                  #
@@ -69,10 +69,6 @@ with open(os.path.join(CONTENT_PATH, "config.json"), "r") as f:
     config = json.load(f)
 config = config[VIS_METHOD]
 
-# record output information
-# now = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time())) 
-# sys.stdout = open(os.path.join(CONTENT_PATH, now+".txt"), "w")
-
 SETTING = config["SETTING"]
 CLASSES = config["CLASSES"]
 DATASET = config["DATASET"]
@@ -101,10 +97,6 @@ B_N_EPOCHS = 0
 L_BOUND = VISUALIZATION_PARAMETER["BOUNDARY"]["L_BOUND"]
 ENCODER_DIMS = VISUALIZATION_PARAMETER["ENCODER_DIMS"]
 DECODER_DIMS = VISUALIZATION_PARAMETER["DECODER_DIMS"]
-
-
-
-
 S_N_EPOCHS = VISUALIZATION_PARAMETER["S_N_EPOCHS"]
 N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
@@ -115,63 +107,7 @@ VIS_MODEL_NAME = 'trustvis_tempo' ### saved_as VIS_MODEL_NAME.pth
 # Define hyperparameters
 GPU_ID = 0
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
-print("device", DEVICE)
-
-def if_border(data):
-    norm_preds = norm(data)
-
-    sort_preds = np.sort(norm_preds, axis=1)
-    diff = sort_preds[:, -1] - sort_preds[:, -2]
-    border = np.zeros(len(diff), dtype=np.uint8) + 0.05
-    border[diff < 0.15] = 1
-        
-    return border
-
-def critical_prediction_flip(ref_pred, tar_pred):
-    critical_prediction_flip_list = []
-    for i in range(len(ref_pred)):
-        if ref_pred[i] != tar_pred[i]:
-            critical_prediction_flip_list.append(i)
-    return critical_prediction_flip_list
-            
-def critical_border_flip(ref_data, tar_data):
-    critical_border_flip_list = []
-    ref_border_list = if_border(ref_data)
-    tar_border_list = if_border(tar_data)
-    for i in range(len(ref_border_list)):
-        if ref_border_list[i] != tar_border_list[i]:
-            critical_border_flip_list.append(i)
-    return critical_border_flip_list
-
-def norm(x):
-    exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-    return exp_x / exp_x.sum(axis=1, keepdims=True)
-
-from pynndescent import NNDescent
-from sklearn.utils import check_random_state
-
-def _construct_fuzzy_complex(train_data, metric="euclidean"):
-    # """
-    # construct a vietoris-rips complex
-    # """
-    # number of trees in random projection forest
-    n_trees = min(64, 5 + int(round((train_data.shape[0]) ** 0.5 / 20.0)))
-    # max number of nearest neighbor iters to perform
-    n_iters = max(5, int(round(np.log2(train_data.shape[0]))))
-    # distance metric
-    # # get nearest neighbors
-    
-    nnd = NNDescent(
-        train_data,
-        n_neighbors=15,
-        metric=metric,
-        n_trees=n_trees,
-        n_iters=n_iters,
-        max_candidates=60,
-        verbose=True
-    )
-    knn_indices, knn_dists = nnd.neighbor_graph
-    return knn_indices
+print("device", DEVICE)           
 
 import Model.model as subject_model
 net = eval("subject_model.{}()".format(NET))
@@ -182,6 +118,7 @@ net = eval("subject_model.{}()".format(NET))
 # Define data_provider
 data_provider = NormalDataProvider(CONTENT_PATH, net, EPOCH_START, EPOCH_END, EPOCH_PERIOD, device=DEVICE, epoch_name='Epoch',classes=CLASSES,verbose=1)
 PREPROCESS = args.preprocess
+# data_provider._meta_adv_data()
 if PREPROCESS:
     data_provider._meta_data()
     if B_N_EPOCHS >0:
@@ -189,13 +126,6 @@ if PREPROCESS:
 
 # Define visualization models
 model = VisModel(ENCODER_DIMS, DECODER_DIMS)
-
-#####  load exsiting vis model for transfer learning
-# save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(EPOCH_START), ORIGIN_VIS_MODEL_NAME + ".pth")
-# save_model = torch.load(save_dir, map_location="cpu")
-# model.load_state_dict(save_model["state_dict"])
-# model.to(DEVICE)
-# model.eval()
 
 
 # Define Losses
@@ -217,67 +147,13 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         # Define DVI Loss
         if start_flag:
             temporal_loss_fn = DummyTemporalLoss(DEVICE)
-            # recon_loss_fn = ReconstructionPredLoss(data_provider=data_provider,epoch=iteration, beta=1.0)
             recon_loss_fn = ReconstructionLoss(beta=1.0)
             umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, data_provider, iteration,net, 100, _a, _b,  repulsion_strength=1.0)
-            # umap_loss_fn = SementicUmapLoss(negative_sample_rate, DEVICE, data_provider, iteration, _a, _b, repulsion_strength=1.0)
-            # recon_loss_fn = ReconstructionPredEdgeLoss(data_provider=data_provider,iteration=iteration, beta=1.0)
             criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=0.0,device=DEVICE)
-            # ref_train_data = data_provider.train_representation(iteration).squeeze()
-            # ref_train_data = ref_train_data.reshape(ref_train_data.shape[0],ref_train_data.shape[1])
-            # k_neighbors = 15
-            # high_neigh = NearestNeighbors(n_neighbors=k_neighbors, radius=0.4)
-            # high_neigh.fit(ref_train_data)
-            # knn_dists, knn_indices = high_neigh.kneighbors(ref_train_data, n_neighbors=k_neighbors, return_distance=True)
-
-            # pred_dif_list = []
-            # pred_dif_index_list = []
-            # gen_border_data = np.array([])
-            # import random
-            # pred_origin = data_provider.get_pred(iteration, ref_train_data)
-            # pred_res = data_provider.get_pred(iteration, ref_train_data).argmax(axis=1)
-
-            # for i in range(len(knn_indices)):
-            # # for i in range(5000):
-            #     neighbor_list = list(knn_indices[i])
-            #     neighbor_data = ref_train_data[neighbor_list]
-            #     # neighbor_pred_origin = pred_origin[neighbor_list]
-            #     neighbor_pred = pred_res[neighbor_list]
-            #     for j in range(len(neighbor_pred)):
-            #         if neighbor_pred[0] != neighbor_pred[j]:
-            #             # if iteration < ((EPOCH_END - EPOCH_START)*0.3):
-            #             if iteration < 70:
-            #                 random_number = random.randint(1, 7)
-            #             else:
-            #                 random_number = 1
-            #             if random_number == 1:
-            #             # gen_points = np.linspace(neighbor_data[0], neighbor_data[j], 3)[1:-1]
-            #                 gen_points = np.array([(neighbor_data[0] + neighbor_data[j]) / 2])
-            #                 if len(gen_border_data) > 0:
-            #                     gen_border_data = np.concatenate((gen_border_data, gen_points), axis=0)
-            #                 else:
-            #                     gen_border_data = gen_points
-            #                     print(gen_border_data.shape)
-
-            #     if (i % 5000) == 0:
-            #         print(i)
-
-            # print(gen_border_data.shape)
-            # sub_n = 10000
-            # if len(gen_border_data) > 10000:
-            #     random_indices = np.random.choice(len(gen_border_data), sub_n, replace=False)
-            #     # random get subsets
-            #     fin_gen_border_data = gen_border_data[random_indices, :]
-            # else:
-            #     fin_gen_border_data = gen_border_data
+            
             t0 = time.time()
             spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
-            # spatial_cons = TrustvisBorderSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net, fin_gen_border_data)
-            # spatial_cons = Trustvis_SpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net)
-
             edge_to, edge_from, probs, pred_probs, feature_vectors, attention = spatial_cons.construct()
-            np.save('probs.npy', probs)
-            np.save('pred_probs.npy', pred_probs)
             t1 = time.time()
             start_flag = 0
             optimizer = torch.optim.Adam(model.parameters(), lr=.01, weight_decay=1e-5)
@@ -300,39 +176,21 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             # 使用 topk 函数找到最大的前 k 个值及其索引
             top_values, top_indices = torch.topk(similarity, k)
             top_indices = top_indices.tolist()
-            # final_critical_list = list(set(critical_list) - (set(top_indices)))
 
-            # critical_data = tar_train_data[final_critical_list]
 
             k_neighbors = 15
-            # high_neigh = NearestNeighbors(n_neighbors=k_neighbors, radius=0.4)
-            # high_neigh.fit(tar_train_data)
-            # knn_indices_ = _construct_fuzzy_complex(tar_train_data)
+
             knn_indices = _construct_fuzzy_complex(new_pred_origin)
             knn_indices = knn_indices[critical_list]
-            # knn_indices_ = knn_indices_[critical_list]
-            # knn_dists, knn_indices = high_neigh.kneighbors(critical_data, n_neighbors=k_neighbors, return_distance=True)
             knn_indices_flat = knn_indices.flatten()
-            # knn_indices_flat_ = knn_indices_.flatten()
-            # diff_set = set(knn_indices_flat).union(set(critical_list))
+
             diff_list = list(set(knn_indices_flat).union(set(critical_list)))
-            # diff_list = list(set(diff_list).union(set(knn_indices_flat_)))
-
-            # final_critical_list = list(set(diff_list) - (set(top_indices)))
-
-            # diff_list = list(diff_set.union(set(vis_error_list)))
-            # diff_list = list(set(knn_indices_flat))
             diff_data = tar_train_data[diff_list]
             filtered_data = [tar_train_data[i] for i in range(len(tar_train_data)) if i not in top_indices]
 
-            # print(top_indices)
             final_list = list(set(diff_list).union(set(top_indices)))
             sim_data = tar_train_data[top_indices]
 
-            # print(len(high_dim_prediction_flip_list))
-            # print(len(high_dim_border_flip_list))
-            # print(len(vis_error_list))
-            ##### construct the spitial complex
             t0 = time.time()
             spatial_cons = TrustvisTemporalSpatialEdgeConstructor(data_provider, iteration, S_N_EPOCHS, B_N_EPOCHS, N_NEIGHBORS, net, diff_data=diff_data, sim_data=sim_data)
             t1 = time.time()
@@ -349,13 +207,6 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             t_1= time.time()
             # npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
             t_2= time.time()
-        
-            # temporal_loss_fn = TemporalLoss(w_prev, DEVICE)
-            # criterion = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=LAMBDA1, lambd2=LAMBDA2*npr,device=DEVICE)
-        # Define training parameters
-        # optimizer = torch.optim.Adam(model.parameters(), lr=.01, weight_decay=1e-5)
-        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=.1)
-        # Define Edge dataset
 
 
         print('complex-construct:', t1-t0)
@@ -409,6 +260,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
 from singleVis.visualizer import visualizer
 now = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time())) 
+
 vis = visualizer(data_provider, projector, 200, "tab10")
 save_dir = os.path.join(data_provider.content_path, VIS_MODEL_NAME)
 
@@ -417,9 +269,6 @@ if not os.path.exists(save_dir):
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     vis.savefig(i, path=os.path.join(save_dir, "{}_{}_{}_{}.png".format(DATASET, i, VIS_METHOD,now)))
 
-# emb = projector.batch_project(data_provider)
-
-    
 ########################################################################################################################
 #                                                       EVALUATION                                                     #
 ########################################################################################################################
