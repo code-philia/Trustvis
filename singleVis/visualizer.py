@@ -182,7 +182,7 @@ class visualizer(VisualizerAbstractClass):
         diff = (sort_preds[:, -1] - sort_preds[:, -2]) / (sort_preds[:, -1] - sort_preds[:, 0])
         
         border = np.zeros(len(diff), dtype=np.uint8) + 0.05
-        border[diff < 0.15] = 1
+        border[diff < 0] = 1
         diff[border == 1] = 0.
 
         diff = diff/(diff.max()+1e-8)
@@ -200,23 +200,29 @@ class visualizer(VisualizerAbstractClass):
         color = diff * 0.5 * color + (1 - diff) * np.ones(color.shape, dtype=np.uint8)
         for i, c in enumerate(diff):
             # if c< 0.2 and c > 0.19:  # 当置信度 >= 0.8时，
-            if c< 0.2 and c > 0.05:
+            # if c < 0.005:
+            #     print("init_color")
+            #     color[i] = np.ones(inint_color[i], dtype=np.uint8)
+            if c< 0.15 and c > 0.01:
                 d = 0.2
                 color[i] = d * 0.5 * inint_color[i] + (1 - d) * np.ones(inint_color[i].shape, dtype=np.uint8)  # 黑色
-            elif c< 0.3 and c >= 0.2:  # 当置信度 >= 0.8时，
-                d = 0.3
-                color[i] = d * 0.5 * inint_color[i] + (1 - d) * np.ones(inint_color[i].shape, dtype=np.uint8)  # 黑色
-            elif c< 0.4 and c >= 0.3:  # 当置信度 >= 0.8时，颜色趋向黑色
+            if c< 0.2 and c > 0.15:
                 d = 0.4
                 color[i] = d * 0.5 * inint_color[i] + (1 - d) * np.ones(inint_color[i].shape, dtype=np.uint8)  # 黑色
-            elif c< 0.5 and c >= 0.4:  # 当置信度 >= 0.8时，颜色趋向黑色
+            elif c< 0.3 and c >= 0.2:  # 当置信度 >= 0.8时，
                 d = 0.5
                 color[i] = d * 0.5 * inint_color[i] + (1 - d) * np.ones(inint_color[i].shape, dtype=np.uint8)  # 黑色
-            elif c< 0.6 and c >= 0.5:  # 当置信度 >= 0.8时，颜色趋向黑色
+            elif c< 0.4 and c >= 0.3:  # 当置信度 >= 0.8时，颜色趋向黑色
                 d = 0.6
                 color[i] = d * 0.5 * inint_color[i] + (1 - d) * np.ones(inint_color[i].shape, dtype=np.uint8)  # 黑色
-            elif c< 0.7 and c >= 0.6:  # 当置信度 >= 0.8时，颜色趋向黑色
+            elif c< 0.5 and c >= 0.4:  # 当置信度 >= 0.8时，颜色趋向黑色
                 d = 0.7
+                color[i] = d * 0.5 * inint_color[i] + (1 - d) * np.ones(inint_color[i].shape, dtype=np.uint8)  # 黑色
+            elif c< 0.6 and c >= 0.5:  # 当置信度 >= 0.8时，颜色趋向黑色
+                d = 0.8
+                color[i] = d * 0.5 * inint_color[i] + (1 - d) * np.ones(inint_color[i].shape, dtype=np.uint8)  # 黑色
+            elif c< 0.7 and c >= 0.6:  # 当置信度 >= 0.8时，颜色趋向黑色
+                d = 0.9
                 color[i] = d * 0.5 * inint_color[i] + (1 - d) * np.ones(inint_color[i].shape, dtype=np.uint8)  # 黑色
             elif c< 0.8 and c >= 0.7:  # 当置信度 >= 0.8时，颜色趋向黑色
                 color[i] = inint_color[i]  # 黑色
