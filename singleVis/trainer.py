@@ -322,13 +322,13 @@ class VISTrainer(SingleVisTrainer):
                     if component_to_freeze in name:
                         param.requires_grad = False
                     print(f"Freezing {component_to_freeze}")
-        else:
-            print("freeze decoder only")
-            # Default behavior (original freezing logic can be placed here)
-            for name, param in self.model.named_parameters():
-                if 'decoder' in name:
-                    print("freezed")
-                    param.requires_grad = False
+            else:
+                print("freeze decoder only")
+                # Default behavior (original freezing logic can be placed here)
+                for name, param in self.model.named_parameters():
+                    if 'decoder' in name:
+                        print("freezed")
+                        param.requires_grad = False
         all_loss = []
         umap_losses = []
         recon_losses = []
@@ -385,7 +385,7 @@ class VISTrainer(SingleVisTrainer):
         for epoch in range(MAX_EPOCH_NUMS):
             print("====================\nepoch:{}\n===================".format(epoch+1))
             prev_loss = self.loss
-            loss = self.train_step(data_provider, iteration,epoch,ifFreeze, interval)
+            loss = self.train_step(data_provider, iteration,epoch, ifFreeze, interval)
             self.lr_scheduler.step()
             # early stop, check whether converge or not
             if prev_loss - loss < 5E-3:
@@ -399,6 +399,7 @@ class VISTrainer(SingleVisTrainer):
         time_end = time.time()
         time_spend = time_end - time_start
         print("Time spend: {:.2f} for training vis model...".format(time_spend))
+        return self.model
     
     
     

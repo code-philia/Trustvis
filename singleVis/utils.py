@@ -10,6 +10,7 @@ from pynndescent import NNDescent
 from sklearn.neighbors import KDTree
 from sklearn.metrics import pairwise_distances
 from scipy import stats as stats
+from sklearn.neighbors import NearestNeighbors
 
 def _construct_fuzzy_complex(train_data, metric="euclidean"):
     # """
@@ -419,4 +420,48 @@ def ranking_dist(a,b):
     return ndisordered / (n * (n - 1))
 
 
-
+def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.2,resolution=800,k_neibour=15):
+    train_data = data_provider.train_representation(epoch)
+    train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+    pred = data_provider.get_pred(epoch, train_data)
+    sort_preds = np.sort(pred, axis=1)
+    diff = (sort_preds[:, -1] - sort_preds[:, -2]) / (sort_preds[:, -1] - sort_preds[:, 0])
+    
+    emb = projector.batch_project(epoch,train_data)
+    inv = projector.batch_inverse(epoch, emb)
+    inv_pred = data_provider.get_pred(epoch, inv)
+    inv_sort_preds = np.sort(inv_pred, axis=1)
+    inv_diff = (inv_sort_preds[:, -1] - inv_sort_preds[:, -2]) / (inv_sort_preds[:, -1] - inv_sort_preds[:, 0])
+    conf_error = []
+    for i in range(len(diff)):
+        if abs(diff[i] - inv_diff[i]) > threshold:
+            conf_error.append(i)
+            
+    cof_error_emb = emb[conf_error]
+    grids = vis.get_grid(epoch, resolution)
+    inv_grid = projector.batch_inverse(epoch, grids)
+    
+    """
+        for each conf_error point, we calculate its k nearest low dimensional grids as negative anchors
+    """
+    diff = cof_error_emb[:, np.newaxis, :] - grids[np.newaxis, :, :]
+    dist_squared = np.sum(diff**2, axis=2)
+    k = k_neibour # Number of nearest neighbors to find
+    # Find the indices of the 10 nearest neighbors for each sample in cof_error_emb
+    nearest_neighbor_indices = np.argpartition(dist_squared, k, axis=1)[:, :k]
+    ##### os the 2d embedding's nearest 15 neibour should be used as negative samples
+    neg_grids = grids[nearest_neighbor_indices]
+    print("negative pairs:",neg_grids.shape)
+    
+    """
+        for each conf_error point, we calculate its k nearest high dimensional grids as positive anchors
+    """
+    org_data = train_data[conf_error]
+    # from sklearn.neighbors import NearestNeighbors
+    high_neigh = NearestNeighbors(n_neighbors=k_neibour, radius=0.4)
+    high_neigh.fit(inv_grid)
+    _, knn_indices = high_neigh.kneighbors(org_data, n_neighbors=15, return_distance=True)
+    pos_grids = grids[knn_indices]
+    print("positive pairs:",pos_grids.shape)
+    
+    return conf_error, neg_grids, pos_grids
