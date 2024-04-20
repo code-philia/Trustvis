@@ -292,7 +292,6 @@ class UmapLoss(nn.Module):
         return dynamic_margin
 
 
-
 class UmapLoss_refine_conf(nn.Module):
     def __init__(self, negative_sample_rate, device,  data_provider, epoch, net, error_conf, neg_grid, pos_grid,fixed_number = 5, _a=1.0, _b=1.0, repulsion_strength=1.0):
         super(UmapLoss_refine_conf, self).__init__()
@@ -308,9 +307,9 @@ class UmapLoss_refine_conf(nn.Module):
         self.model_path = os.path.join(self.data_provider.content_path, "Model")
         self.fixed_number = fixed_number
         
-        self.error_conf = error_conf
-        self.neg_grid = neg_grid
-        self.pos_grid = pos_grid
+        self.error_conf = torch.tensor(error_conf)
+        self.neg_grid = torch.tensor(neg_grid)
+        self.pos_grid = torch.tensor(pos_grid)
 
         model_location = os.path.join(self.model_path, "{}_{:d}".format('Epoch', epoch), "subject_model.pth")
         self.net.load_state_dict(torch.load(model_location, map_location=torch.device("cpu")),strict=False)
@@ -367,11 +366,13 @@ class UmapLoss_refine_conf(nn.Module):
 
         for i,org_index in enumerate(filtered_to_idx):
             indicates = (self.error_conf == org_index).nonzero(as_tuple=True)[0]
+            indicates= indicates[0].item()
             neg_grids = self.neg_grid[indicates].squeeze()
             pos_grids = self.pos_grid[indicates].squeeze()
-            # Append the matched negative grids and the corresponding embedding
             
-            conf_e_from.extend([embedding_to[conf_e_indices_to[i]]] * len(neg_grids))  
+            # Append the matched negative grids and the corresponding embedding
+            # org_emb = torch.repeat_interleave(pred_edge_to, self._negative_sample_rate, dim=0)
+            conf_e_from.extend([embedding_to[i]] * len(neg_grids))  
             conf_e_to_pos.extend(pos_grids)
             conf_e_to_neg.extend(neg_grids)
         
@@ -381,18 +382,23 @@ class UmapLoss_refine_conf(nn.Module):
             pos_grids = self.pos_grid[indicates].squeeze()
             # Append the matched negative grids and the corresponding embedding
             
-            conf_e_from.extend([embedding_to[conf_e_indices_to[i]]] * len(neg_grids))  
+            conf_e_from.extend([embedding_to[i]] * len(neg_grids))  
             conf_e_to_pos.extend(pos_grids)
             conf_e_to_neg.extend(neg_grids)
             
         # Convert lists to tensors
-        conf_e_from = torch.stack(conf_e_to_pos)
-        conf_e_to_pos = torch.stack(conf_e_to_pos)
-        conf_e_to_neg = torch.stack(conf_e_to_neg)
-             
+        if len(conf_e_to_pos) > 0:
+            conf_e_from = torch.stack(conf_e_to_pos).to(self.DEVICE)
+            conf_e_to_pos = torch.stack(conf_e_to_pos).to(self.DEVICE)
+            conf_e_to_neg = torch.stack(conf_e_to_neg).to(self.DEVICE)
+            conf_pos_distance =  torch.norm(conf_e_from - conf_e_to_pos, dim=1).to(self.DEVICE)
+            conf_neg_distance = torch.norm(conf_e_from - conf_e_to_pos, dim=1).to(self.DEVICE)
+        else:
+            conf_pos_distance = torch.tensor([], device=self.DEVICE)
+            conf_neg_distance = torch.tensor([], device=self.DEVICE)
+            
+ 
 
-        conf_pos_distance =  torch.norm(conf_e_from - conf_e_to_pos, dim=1)
-        conf_neg_distance = torch.norm(conf_e_from - conf_e_to_pos, dim=1)
         positive_distance = torch.norm(embedding_to - embedding_from, dim=1)
         negative_distance = torch.norm(embedding_neg_to - embedding_neg_from, dim=1)
         #  distances between samples (and negative samples)
@@ -425,8 +431,8 @@ class UmapLoss_refine_conf(nn.Module):
         distance_embedding = torch.cat(
             (
                 positive_distance,
-                negative_distance,
                 conf_pos_distance,
+                negative_distance,
                 conf_neg_distance
             ),
             dim=0,
@@ -439,7 +445,7 @@ class UmapLoss_refine_conf(nn.Module):
         probabilities_graph = torch.cat(
         (
             probs,
-            torch.ones(len(negative_distance)).to(self.DEVICE), # ground truth grid points
+            torch.ones(len(conf_pos_distance)).to(self.DEVICE), # ground truth grid points
             torch.zeros(neg_num + len(conf_neg_distance)).to(self.DEVICE)
         ),dim=0)
 
@@ -479,7 +485,7 @@ class UmapLoss_refine_conf(nn.Module):
         condition2 = (neg_conf_from==neg_conf_to)
         # condition2 = (np.abs(neg_conf_from - neg_conf_to)< delta)
         indices = np.where(~(condition1 & condition2))[0]
-        return indices
+        return indices   
 
 class DVILoss(nn.Module):
     def __init__(self, umap_loss, recon_loss, temporal_loss, lambd1, lambd2, device):

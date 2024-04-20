@@ -297,13 +297,12 @@ class BaseTrainer(SingleVisTrainer):
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
 
-import numpy as np
 class VISTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader,DEVICE):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
     
     
-    def train_step(self,data_provider,iteration,epoch,ifFreeze):
+    def train_step(self,data_provider,iteration,epoch,ifFreeze, interval):
         
         projector = PROCESSProjector(self.model, data_provider.content_path, '', self.DEVICE)
         evaluator = Evaluator(data_provider, projector)
@@ -312,10 +311,22 @@ class VISTrainer(SingleVisTrainer):
 
         self.model = self.model.to(device=self.DEVICE)
         self.model.train()
-        
         if ifFreeze:
             for name, param in self.model.named_parameters():
-                if 'decoder' in name:  # assuming 'decoder' in the name for decoder components
+                param.requires_grad = True
+            if interval:
+                # Determine component to freeze based on whether the epoch is even or odd
+                component_to_freeze = 'decoder' if epoch % 2 == 0 else 'encoder'
+                print("interval freeze: {}".format(component_to_freeze))
+                for name, param in self.model.named_parameters():
+                    if component_to_freeze in name:
+                        param.requires_grad = False
+                    print(f"Freezing {component_to_freeze}")
+        else:
+            print("freeze decoder only")
+            # Default behavior (original freezing logic can be placed here)
+            for name, param in self.model.named_parameters():
+                if 'decoder' in name:
                     print("freezed")
                     param.requires_grad = False
         all_loss = []
@@ -368,13 +379,13 @@ class VISTrainer(SingleVisTrainer):
                                                                 sum(all_loss) / len(all_loss)))
         return self.loss
     
-    def train(self, PATIENT, MAX_EPOCH_NUMS, data_provider, iteration, ifFreeze=False):
+    def train(self, PATIENT, MAX_EPOCH_NUMS, data_provider, iteration, ifFreeze=False, interval=False):
         patient = PATIENT
         time_start = time.time()
         for epoch in range(MAX_EPOCH_NUMS):
             print("====================\nepoch:{}\n===================".format(epoch+1))
             prev_loss = self.loss
-            loss = self.train_step(data_provider, iteration,epoch,ifFreeze)
+            loss = self.train_step(data_provider, iteration,epoch,ifFreeze, interval)
             self.lr_scheduler.step()
             # early stop, check whether converge or not
             if prev_loss - loss < 5E-3:
