@@ -100,13 +100,13 @@ DECODER_DIMS = VISUALIZATION_PARAMETER["DECODER_DIMS"]
 S_N_EPOCHS = VISUALIZATION_PARAMETER["S_N_EPOCHS"]
 N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
-MAX_EPOCH = 5
-MAX_EPOCH_ = 5
+MAX_EPOCH = 8
+MAX_EPOCH_ = 3
 VIS_MODEL_NAME = 'trustvis' ### saved_as VIS_MODEL_NAME.pth
 FIXED_EPOCHS = 5
 
 # Define hyperparameters
-GPU_ID = 0
+GPU_ID = 1
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
 print("device", DEVICE)           
 
@@ -229,29 +229,30 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
         t2=time.time()
         
-        stage_one_model = trainer.train(PATIENT, MAX_EPOCH,data_provider,iteration,False,False)
+        trainer.train(PATIENT, MAX_EPOCH,data_provider,iteration,False,False)
         t3 = time.time()
         print('training stage one:', t3-t2)
+        save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(iteration))
+        trainer.save(save_dir=save_dir, file_name="{}".format(VIS_MODEL_NAME))
         
         t4 = time.time()
         ##### start stage two
-        projector = VISProjector(vis_model=stage_one_model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
-        vis = visualizer(data_provider, projector, 800, "tab10")
+
+        projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+        vis = visualizer(data_provider, projector, 200, "tab10")
         conf_error,neg_grids,pos_grids = get_confidence_error_pairs(data_provider,iteration,projector,vis,0.2)
         print("conf_error number:", len(conf_error))
         
         umap_loss_fn = UmapLoss_refine_conf(negative_sample_rate, DEVICE, data_provider, iteration,net, conf_error, neg_grids,pos_grids,100, _a, _b,  repulsion_strength=1.0)
         criterion_ = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=3*LAMBDA1, lambd2=0.0,device=DEVICE)
         trainer_ = VISTrainer(model, criterion_, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
-        model_ = trainer_.train(PATIENT, MAX_EPOCH_,data_provider,iteration,True,True)
+        trainer_.train(PATIENT, MAX_EPOCH_,data_provider,iteration,True,False)
         t5 = time.time()
         # save result
         print('training stage two:', t5-t4)
-        save_dir = data_provider.model_path
-        trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "complex_construction", str(iteration), t1-t0)
-        trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "training_1", str(iteration), t3-t2)
-        trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "training_2", str(iteration), t5-t4)
-        save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(iteration))
+        trainer.record_time(data_provider.model_path, "time_{}".format(VIS_MODEL_NAME), "complex_construction", str(iteration), t1-t0)
+        trainer.record_time(data_provider.model_path, "time_{}".format(VIS_MODEL_NAME), "training_1", str(iteration), t3-t2)
+        trainer.record_time(data_provider.model_path, "time_{}".format(VIS_MODEL_NAME), "training_2", str(iteration), t5-t4)
         trainer.save(save_dir=save_dir, file_name="{}".format(VIS_MODEL_NAME))
 
         print("Finish epoch {}...".format(iteration))
@@ -267,7 +268,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 ########################################################################################################################
 now = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time())) 
 
-vis = visualizer(data_provider, projector, 800, "tab10")
+vis = visualizer(data_provider, projector, 200, "tab10")
 save_dir = os.path.join(data_provider.content_path, VIS_MODEL_NAME)
 
 if not os.path.exists(save_dir):

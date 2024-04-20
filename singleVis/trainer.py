@@ -6,7 +6,7 @@ import json
 from tqdm import tqdm
 import torch
 
-
+from singleVis.visualizer import visualizer
 from singleVis.eval.evaluator import Evaluator
 import sys
 sys.path.append('..')
@@ -16,7 +16,7 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
 torch.manual_seed(0)  # fixed seed
 torch.cuda.manual_seed_all(0)
-
+from singleVis.utils import get_confidence_error_pairs
 """
 1. construct a spatio-temporal complex
 2. construct an edge-dataset
@@ -321,19 +321,21 @@ class VISTrainer(SingleVisTrainer):
                 for name, param in self.model.named_parameters():
                     if component_to_freeze in name:
                         param.requires_grad = False
-                    print(f"Freezing {component_to_freeze}")
+                    # print(f"Freezing {component_to_freeze}")
             else:
                 print("freeze decoder only")
                 # Default behavior (original freezing logic can be placed here)
                 for name, param in self.model.named_parameters():
                     if 'decoder' in name:
-                        print("freezed")
+                        # print("freezed")
                         param.requires_grad = False
         all_loss = []
         umap_losses = []
         recon_losses = []
         temporal_losses = []
         new_losses = []
+        
+        
 
         t = tqdm(self.edge_loader, leave=True, total=len(self.edge_loader))
 
@@ -343,6 +345,9 @@ class VISTrainer(SingleVisTrainer):
 
         recon_train_data = self.model(torch.Tensor(train_data).to(self.DEVICE), torch.Tensor(train_data).to(self.DEVICE))['recon'][0]
         recon_pred = data_provider.get_pred(iteration, recon_train_data.detach().cpu().numpy())
+        # if ifFreeze:
+        #     vis = visualizer(data_provider, projector, 200, "tab10")
+        #     conf_error,neg_grids,pos_grids = get_confidence_error_pairs(data_provider,iteration,projector,vis,0.2)
 
         for data in t:
             edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from,probs,pred_edge_to, pred_edge_from = data
@@ -399,7 +404,6 @@ class VISTrainer(SingleVisTrainer):
         time_end = time.time()
         time_spend = time_end - time_start
         print("Time spend: {:.2f} for training vis model...".format(time_spend))
-        return self.model
     
     
     

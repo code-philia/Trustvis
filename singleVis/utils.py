@@ -420,27 +420,29 @@ def ranking_dist(a,b):
     return ndisordered / (n * (n - 1))
 
 
-def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.2,resolution=800,k_neibour=15):
+def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.3,resolution=200,k_neibour=15):
     train_data = data_provider.train_representation(epoch)
     train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
     pred = data_provider.get_pred(epoch, train_data)
     sort_preds = np.sort(pred, axis=1)
     diff = (sort_preds[:, -1] - sort_preds[:, -2]) / (sort_preds[:, -1] - sort_preds[:, 0])
-    
+    print("get org pred")
     emb = projector.batch_project(epoch,train_data)
     inv = projector.batch_inverse(epoch, emb)
     inv_pred = data_provider.get_pred(epoch, inv)
     inv_sort_preds = np.sort(inv_pred, axis=1)
     inv_diff = (inv_sort_preds[:, -1] - inv_sort_preds[:, -2]) / (inv_sort_preds[:, -1] - inv_sort_preds[:, 0])
+    print("get inv pred")
     conf_error = []
     for i in range(len(diff)):
         if abs(diff[i] - inv_diff[i]) > threshold:
             conf_error.append(i)
-            
+    if len(conf_error) > 5000:
+        conf_error = conf_error[:5000]     
     cof_error_emb = emb[conf_error]
     grids = vis.get_grid(epoch, resolution)
     inv_grid = projector.batch_inverse(epoch, grids)
-    
+    print("conf_error number:",len(conf_error),resolution)
     """
         for each conf_error point, we calculate its k nearest low dimensional grids as negative anchors
     """
