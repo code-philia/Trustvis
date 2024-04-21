@@ -420,7 +420,7 @@ def ranking_dist(a,b):
     return ndisordered / (n * (n - 1))
 
 
-def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.3,resolution=200,k_neibour=15):
+def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.3,resolution=200,k_neibour=15,max_refine=5000):
     train_data = data_provider.train_representation(epoch)
     train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
     pred = data_provider.get_pred(epoch, train_data)
@@ -436,11 +436,21 @@ def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.
     inv_diff = (inv_sort_preds[:, -1] - inv_sort_preds[:, -2]) / (inv_sort_preds[:, -1] - inv_sort_preds[:, 0])
     print("get inv pred")
     conf_error = []
+    diff_values=[]
     for i in range(len(diff)):
-        if abs(diff[i] - inv_diff[i]) > threshold or pred_res[i]!=inv_pred_res[i]:
+        abs_diff = abs(diff[i] - inv_diff[i])
+        if abs_diff > threshold or pred_res[i]!=inv_pred_res[i]:
             conf_error.append(i)
-    if len(conf_error) > 5000:
-        conf_error = conf_error[:5000]     
+            diff_values.append((abs_diff, pred_res[i] != inv_pred_res[i]))
+    print("real conf_error number:",len(conf_error),resolution)
+    # Combine indices with their respective differences and whether prediction differed
+    indexed_diff = list(zip(conf_error, diff_values))
+    # Sort primarily by whether predictions are different (True first), then by differences in descending order
+    indexed_diff.sort(key=lambda x: (-x[1][1], -x[1][0]))
+    # Select the first max_refine if there are more than 5000 elements
+    if len(indexed_diff) > max_refine:
+        indexed_diff = indexed_diff[:max_refine]
+     
     cof_error_emb = emb[conf_error]
     grids = vis.get_grid(epoch, resolution)
     inv_grid = projector.batch_inverse(epoch, grids)
