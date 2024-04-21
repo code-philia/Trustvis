@@ -100,10 +100,9 @@ DECODER_DIMS = VISUALIZATION_PARAMETER["DECODER_DIMS"]
 S_N_EPOCHS = VISUALIZATION_PARAMETER["S_N_EPOCHS"]
 N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
-MAX_EPOCH = 8
-MAX_EPOCH_ = 3
+MAX_EPOCH = 10
+MAX_EPOCH_ = 1
 VIS_MODEL_NAME = 'trustvis' ### saved_as VIS_MODEL_NAME.pth
-FIXED_EPOCHS = 5
 
 # Define hyperparameters
 GPU_ID = 1
@@ -239,8 +238,8 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         ##### start stage two
 
         projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
-        vis = visualizer(data_provider, projector, 200, "tab10")
-        conf_error,neg_grids,pos_grids = get_confidence_error_pairs(data_provider,iteration,projector,vis,0.2)
+        vis = visualizer(data_provider, projector, 400, "tab10")
+        conf_error,neg_grids,pos_grids = get_confidence_error_pairs(data_provider,iteration,projector,vis,0.2,400)
         print("conf_error number:", len(conf_error))
         
         umap_loss_fn = UmapLoss_refine_conf(negative_sample_rate, DEVICE, data_provider, iteration,net, conf_error, neg_grids,pos_grids,100, _a, _b,  repulsion_strength=1.0)
