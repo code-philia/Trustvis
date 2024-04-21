@@ -291,9 +291,8 @@ class UmapLoss(nn.Module):
 
         return dynamic_margin
 
-
 class UmapLoss_refine_conf(nn.Module):
-    def __init__(self, negative_sample_rate, device,  data_provider, epoch, net, error_conf, neg_grid, pos_grid,fixed_number = 5, _a=1.0, _b=1.0, repulsion_strength=1.0):
+    def __init__(self, negative_sample_rate, device,  data_provider, epoch, net, error_conf, neg_grid, pos_grid,distance_list,fixed_number = 5, _a=1.0, _b=1.0, repulsion_strength=1.0):
         super(UmapLoss_refine_conf, self).__init__()
 
         self._negative_sample_rate = negative_sample_rate
@@ -310,6 +309,7 @@ class UmapLoss_refine_conf(nn.Module):
         self.error_conf = torch.tensor(error_conf)
         self.neg_grid = torch.tensor(neg_grid)
         self.pos_grid = torch.tensor(pos_grid)
+        self.distance_list = distance_list
 
         model_location = os.path.join(self.model_path, "{}_{:d}".format('Epoch', epoch), "subject_model.pth")
         self.net.load_state_dict(torch.load(model_location, map_location=torch.device("cpu")),strict=False)
@@ -348,17 +348,16 @@ class UmapLoss_refine_conf(nn.Module):
 
         neg_num = len(embedding_neg_from)
         
-        
         #### identify if the conf error is in the current pair #####################################
-    
-        conf_e_from = []
+        conf_e_neg_from = []
         conf_e_pos_from = []
         conf_e_to_pos = []
         conf_e_to_neg = []
 
-            
+        ####### label the element that in the error conf
         mask_to = torch.isin(edge_to_idx, self.error_conf)
         mask_from = torch.isin(edge_from_idx, self.error_conf)
+        ######## get the indicates
         conf_e_indices_to = torch.nonzero(mask_to, as_tuple=True)[0]
         conf_e_indices_from = torch.nonzero(mask_from, as_tuple=True)[0]
 
@@ -366,37 +365,48 @@ class UmapLoss_refine_conf(nn.Module):
         filtered_from_idx = edge_from_idx[conf_e_indices_from]
 
         for i,org_index in enumerate(filtered_to_idx):
+            ##### get the position in the error_conf
             indicates = (self.error_conf == org_index).nonzero(as_tuple=True)[0]
             indicates= indicates[0].item()
             neg_grids = self.neg_grid[indicates].squeeze()
-            pos_grids = self.pos_grid[indicates].squeeze()
+            # pos_grids = self.pos_grid[indicates].squeeze()
+            pos_grids = self.pos_grid[indicates].unsqueeze(0) if self.pos_grid[indicates].ndim == 1 else self.pos_grid[indicates]
             
             # Append the matched negative grids and the corresponding embedding
             # org_emb = torch.repeat_interleave(pred_edge_to, self._negative_sample_rate, dim=0)
             conf_e_from.extend([embedding_to[i]] * len(neg_grids)) 
-            conf_e_pos_from.extend([embedding_to[i]] * len(pos_grids)) 
-            conf_e_to_pos.extend(pos_grids)
             conf_e_to_neg.extend(neg_grids)
+            
+            if self.distance_list[indicates] < 0.5:
+                # print("indicates to",indicates)
+                conf_e_pos_from.extend([embedding_from[i]] * len(pos_grids)) 
+                conf_e_to_pos.extend(pos_grids)
         
         for i,org_index in enumerate(filtered_from_idx):
             indicates = (self.error_conf == org_index).nonzero(as_tuple=True)[0]
+            indicates= indicates[0].item()
             neg_grids = self.neg_grid[indicates].squeeze()
-            pos_grids = self.pos_grid[indicates].squeeze()
+            # pos_grids = self.pos_grid[indicates].squeeze()
+            pos_grids = self.pos_grid[indicates].unsqueeze(0) if self.pos_grid[indicates].ndim == 1 else self.pos_grid[indicates]
+            
             # Append the matched negative grids and the corresponding embedding
-            
-            conf_e_from.extend([embedding_to[i]] * len(neg_grids))
-            conf_e_pos_from.extend([embedding_to[i]] * len(pos_grids))  
-            conf_e_to_pos.extend(pos_grids)
+            # org_emb = torch.repeat_interleave(pred_edge_to, self._negative_sample_rate, dim=0)
+            conf_e_neg_from.extend([embedding_from[i]] * len(neg_grids)) 
             conf_e_to_neg.extend(neg_grids)
-            
+            if self.distance_list[indicates] < 1:
+                # print("indicates from",indicates)
+                conf_e_pos_from.extend([embedding_from[i]] * len(pos_grids)) 
+                conf_e_to_pos.extend(pos_grids)
+        
         # Convert lists to tensors
         if len(conf_e_to_pos) > 0:
-            conf_e_from = torch.stack(conf_e_from).to(self.DEVICE)
+            conf_e_neg_from = torch.stack(conf_e_neg_from).to(self.DEVICE)
             conf_e_pos_from = torch.stack(conf_e_pos_from).to(self.DEVICE)
             conf_e_to_pos = torch.stack(conf_e_to_pos).to(self.DEVICE)
             conf_e_to_neg = torch.stack(conf_e_to_neg).to(self.DEVICE)
+            # print("conf_e_pos_from",conf_e_pos_from.shape,"conf_e_to_pos",conf_e_to_pos.shape,"conf_e_from - conf_e_to_neg",conf_e_from.shape,conf_e_to_neg.shape)
             conf_pos_distance =  torch.norm(conf_e_pos_from - conf_e_to_pos, dim=1).to(self.DEVICE)
-            conf_neg_distance = torch.norm(conf_e_from - conf_e_to_pos, dim=1).to(self.DEVICE)
+            conf_neg_distance = torch.norm(conf_e_neg_from - conf_e_to_neg, dim=1).to(self.DEVICE)
         else:
             conf_pos_distance = torch.tensor([], device=self.DEVICE)
             conf_neg_distance = torch.tensor([], device=self.DEVICE)
@@ -450,7 +460,9 @@ class UmapLoss_refine_conf(nn.Module):
         (
             probs,
             torch.ones(len(conf_pos_distance)).to(self.DEVICE), # ground truth grid points
+            # torch.zeros(len(conf_neg_distance)).to(self.DEVICE)
             torch.zeros(neg_num + len(conf_neg_distance)).to(self.DEVICE)
+            # torch.zeros(neg_num + len(conf_neg_distance)).to(self.DEVICE)
         ),dim=0)
 
         probabilities_graph = probabilities_graph.to(device=self.DEVICE)
@@ -471,6 +483,8 @@ class UmapLoss_refine_conf(nn.Module):
         margin_loss = F.relu(margin.to(self.DEVICE) - positive_distance.to(self.DEVICE)).mean()
         
         umap_l = torch.mean(ce_loss).to(self.DEVICE) 
+        if torch.isnan(umap_l):
+            umap_l = torch.tensor(0.0).to(DEVICE)
         margin_loss = margin_loss.to(self.DEVICE)
 
         if torch.isnan(margin_loss):
