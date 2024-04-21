@@ -352,6 +352,7 @@ class UmapLoss_refine_conf(nn.Module):
         #### identify if the conf error is in the current pair #####################################
     
         conf_e_from = []
+        conf_e_pos_from = []
         conf_e_to_pos = []
         conf_e_to_neg = []
 
@@ -372,7 +373,8 @@ class UmapLoss_refine_conf(nn.Module):
             
             # Append the matched negative grids and the corresponding embedding
             # org_emb = torch.repeat_interleave(pred_edge_to, self._negative_sample_rate, dim=0)
-            conf_e_from.extend([embedding_to[i]] * len(neg_grids))  
+            conf_e_from.extend([embedding_to[i]] * len(neg_grids)) 
+            conf_e_pos_from.extend([embedding_to[i]] * len(pos_grids)) 
             conf_e_to_pos.extend(pos_grids)
             conf_e_to_neg.extend(neg_grids)
         
@@ -382,16 +384,18 @@ class UmapLoss_refine_conf(nn.Module):
             pos_grids = self.pos_grid[indicates].squeeze()
             # Append the matched negative grids and the corresponding embedding
             
-            conf_e_from.extend([embedding_to[i]] * len(neg_grids))  
+            conf_e_from.extend([embedding_to[i]] * len(neg_grids))
+            conf_e_pos_from.extend([embedding_to[i]] * len(pos_grids))  
             conf_e_to_pos.extend(pos_grids)
             conf_e_to_neg.extend(neg_grids)
             
         # Convert lists to tensors
         if len(conf_e_to_pos) > 0:
-            conf_e_from = torch.stack(conf_e_to_pos).to(self.DEVICE)
+            conf_e_from = torch.stack(conf_e_from).to(self.DEVICE)
+            conf_e_pos_from = torch.stack(conf_e_pos_from).to(self.DEVICE)
             conf_e_to_pos = torch.stack(conf_e_to_pos).to(self.DEVICE)
             conf_e_to_neg = torch.stack(conf_e_to_neg).to(self.DEVICE)
-            conf_pos_distance =  torch.norm(conf_e_from - conf_e_to_pos, dim=1).to(self.DEVICE)
+            conf_pos_distance =  torch.norm(conf_e_pos_from - conf_e_to_pos, dim=1).to(self.DEVICE)
             conf_neg_distance = torch.norm(conf_e_from - conf_e_to_pos, dim=1).to(self.DEVICE)
         else:
             conf_pos_distance = torch.tensor([], device=self.DEVICE)
