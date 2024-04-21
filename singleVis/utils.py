@@ -437,7 +437,7 @@ def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.
     print("get inv pred")
     conf_error = []
     for i in range(len(diff)):
-        if abs(diff[i] - inv_diff[i]) > threshold or pred_res!=inv_pred_res:
+        if abs(diff[i] - inv_diff[i]) > threshold or pred_res[i]!=inv_pred_res[i]:
             conf_error.append(i)
     if len(conf_error) > 5000:
         conf_error = conf_error[:5000]     
