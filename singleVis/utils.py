@@ -446,7 +446,7 @@ def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.
     # Combine indices with their respective differences and whether prediction differed
     indexed_diff = list(zip(conf_error, diff_values))
     # Sort primarily by whether predictions are different (True first), then by differences in descending order
-    indexed_diff.sort(key=lambda x: (-x[1][1], -x[1][0]))
+    indexed_diff.sort(key=lambda x: (~x[1][1], -x[1][0]))
     # Select the first max_refine if there are more than 5000 elements
     if len(indexed_diff) > max_refine:
         indexed_diff = indexed_diff[:max_refine]
