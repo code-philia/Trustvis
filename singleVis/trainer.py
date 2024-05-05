@@ -297,6 +297,91 @@ class BaseTrainer(SingleVisTrainer):
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
 
+class BaseTextTrainer(SingleVisTrainer):
+    def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader,DEVICE):
+        super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
+    
+    
+    def train_step(self,data_provider,iteration,epoch):
+
+        self.model = self.model.to(device=self.DEVICE)
+        self.model.train()
+        all_loss = []
+        umap_losses = []
+        recon_losses = []
+        temporal_losses = []
+        new_losses = []
+
+        t = tqdm(self.edge_loader, leave=True, total=len(self.edge_loader))
+
+
+        for data in t:
+            _,_ , edge_to, edge_from, a_to, a_from,probs,_, _ = data
+
+            edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
+            edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
+            a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
+            a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
+            probs = probs.to(device=self.DEVICE, dtype=torch.float32)
+
+            # outputs = self.model(edge_to, edge_from)
+            umap_l, new_l, recon_l, temporal_l, loss = self.criterion(edge_to, edge_from, a_to, a_from, self.model, probs )
+            all_loss.append(loss.mean().item())
+            new_losses.append(new_l.item())
+            umap_losses.append(umap_l.item())
+            recon_losses.append(recon_l.item())
+            temporal_losses.append(temporal_l.mean().item())
+            # ===================backward====================
+            self.optimizer.zero_grad()
+            loss.mean().backward()
+            # loss_new.backward()
+            self.optimizer.step()
+        self._loss = sum(all_loss) / len(all_loss)
+        self.model.eval()
+        print('umap:{:.4f}\trecon_l:{:.4f}\tnew_loss:{:.4f}\tloss:{:.4f}'.format(sum(umap_losses) / len(umap_losses),
+                                                                sum(recon_losses) / len(recon_losses),
+                                                                sum(new_losses) / len(new_losses),
+                                                                sum(all_loss) / len(all_loss)))
+        return self.loss
+    
+    def train(self, PATIENT, MAX_EPOCH_NUMS, data_provider, iteration):
+        patient = PATIENT
+        time_start = time.time()
+        for epoch in range(MAX_EPOCH_NUMS):
+            print("====================\nepoch:{}\n===================".format(epoch+1))
+            prev_loss = self.loss
+            loss = self.train_step(data_provider, iteration,epoch)
+            self.lr_scheduler.step()
+            # early stop, check whether converge or not
+            if prev_loss - loss < 5E-3:
+                if patient == 0:
+                    break
+                else:
+                    patient -= 1
+            else:
+                patient = PATIENT
+
+        time_end = time.time()
+        time_spend = time_end - time_start
+        print("Time spend: {:.2f} for training vis model...".format(time_spend))
+    
+    
+    
+    def record_time(self, save_dir, file_name, operation, iteration, t):
+        # save result
+        save_file = os.path.join(save_dir, file_name+".json")
+        if not os.path.exists(save_file):
+            evaluation = dict()
+        else:
+            f = open(save_file, "r")
+            evaluation = json.load(f)
+            f.close()
+        if operation not in evaluation.keys():
+            evaluation[operation] = dict()
+        evaluation[operation][iteration] = round(t, 3)
+        with open(save_file, 'w') as f:
+            json.dump(evaluation, f)
+
 class VISTrainer(SingleVisTrainer):
     def __init__(self, model, criterion, optimizer, lr_scheduler, edge_loader,DEVICE):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
@@ -397,3 +482,51 @@ class VISTrainer(SingleVisTrainer):
         evaluation[operation][iteration] = round(t, 3)
         with open(save_file, 'w') as f:
             json.dump(evaluation, f)
+
+    def calc_gradient(self,data_provider,iteration,core_epoch):
+        self.model = self.model.to(device=self.DEVICE)
+        self.model.eval()
+
+        t = tqdm(self.edge_loader, leave=False, total=len(self.edge_loader))
+
+        train_data = data_provider.train_representation(iteration)
+        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+
+        recon_train_data = self.model(torch.Tensor(train_data).to(self.DEVICE), torch.Tensor(train_data).to(self.DEVICE))['recon'][0]
+        recon_pred = data_provider.get_pred(iteration, recon_train_data.detach().cpu().numpy())
+        gradients_to = torch.zeros_like(torch.Tensor(train_data).to(self.DEVICE))
+        gradients_from = torch.zeros_like(torch.Tensor(train_data).to(self.DEVICE))
+        for data in t:
+            self.optimizer.zero_grad()
+            edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from,probs,pred_edge_to, pred_edge_from = data
+
+            edge_to = edge_to.to(device=self.DEVICE, dtype=torch.float32)
+            edge_from = edge_from.to(device=self.DEVICE, dtype=torch.float32)
+            a_to = a_to.to(device=self.DEVICE, dtype=torch.float32)
+            a_from = a_from.to(device=self.DEVICE, dtype=torch.float32)
+            probs = probs.to(device=self.DEVICE, dtype=torch.float32)
+
+            pred_edge_to = pred_edge_to.to(device=self.DEVICE, dtype=torch.float32)
+            pred_edge_from = pred_edge_from.to(device=self.DEVICE, dtype=torch.float32)
+
+            recon_pred_edge_to = torch.Tensor(recon_pred[edge_to_idx]).to(device=self.DEVICE, dtype=torch.float32)
+            recon_pred_edge_from = torch.Tensor(recon_pred[edge_from_idx]).to(device=self.DEVICE, dtype=torch.float32)
+
+            umap_l, new_l, recon_l, temporal_l, loss = self.criterion(edge_to_idx, edge_from_idx,edge_to, edge_from, a_to, a_from, self.model, probs,pred_edge_to, pred_edge_from,recon_pred_edge_to,recon_pred_edge_from,core_epoch )
+            with torch.no_grad():
+                grads_to = torch.autograd.grad(loss, edge_to, retain_graph=True)[0]
+                grads_from = torch.autograd.grad(loss, edge_from, retain_graph=True)[0]
+                for i in range(len(edge_to_idx)):
+                    gradients_to[edge_to_idx[i]] += grads_to[i]
+                    gradients_from[edge_from_idx[i]] += grads_from[i]
+
+        for idx in range(len(train_data)):
+            count_to = torch.sum(edge_to_idx == idx).item()
+            count_from = torch.sum(edge_from_idx == idx).item()
+            if count_to > 0:
+                gradients_to[idx] /= count_to
+            if count_from > 0:
+                gradients_from[idx] /= count_from
+        gradients = (gradients_to + gradients_from) / 2
+        self.model.train()
+        return gradients

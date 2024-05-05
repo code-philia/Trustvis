@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import base64
+import json
 
 class VisualizerAbstractClass(ABC):
     @abstractmethod
@@ -167,6 +168,11 @@ class visualizer(VisualizerAbstractClass):
         else:
             x_min, y_min, x_max, y_max = xy_limit
 
+
+        print([x_min, y_min, x_max, y_max])
+        save_dir = os.path.join(self.data_provider.model_path, "Epoch_{}".format(epoch))
+        scale_path = os.path.join(save_dir, "scale.npy")
+        np.save(scale_path, [x_min, y_min, x_max, y_max])
         # create grid
         xs = np.linspace(x_min, x_max, resolution)
         ys = np.linspace(y_min, y_max, resolution)
@@ -203,8 +209,46 @@ class visualizer(VisualizerAbstractClass):
             return grid_samples, grid, border
         
         return grid_view, decision_view
-
     
+    def get_epoch_decision_view_text(self, epoch, resolution, xy_limit=None, forDetail=False):
+        '''
+        get background classifier view
+        :param epoch_id: epoch that need to be visualized
+        :param resolution: background resolution
+        :return:
+            grid_view : numpy.ndarray, self.resolution,self.resolution, 2
+            decision_view : numpy.ndarray, self.resolution,self.resolution, 3
+        '''
+        print('Computing decision regions ...')
+
+        if xy_limit is None:
+            x_min, y_min, x_max, y_max = self.get_epoch_plot_measures(epoch)
+        else:
+            x_min, y_min, x_max, y_max = xy_limit
+
+
+        print([x_min, y_min, x_max, y_max])
+        save_dir = os.path.join(self.data_provider.model_path, "Epoch_{}".format(epoch))
+        scale_path = os.path.join(save_dir, "scale.npy")
+        np.save(scale_path, [x_min, y_min, x_max, y_max])
+
+    def save_scale_bgimg(self, epoch):
+        
+        '''
+        Shows the current plot.
+        '''
+        self._init_plot(only_img=True)
+        x_min, y_min, x_max, y_max = self.get_epoch_plot_measures(epoch)
+        print([x_min, y_min, x_max, y_max])
+        save_dir = os.path.join(self.data_provider.model_path, "Epoch_{}".format(epoch))
+        scale_path = os.path.join(save_dir, "scale.npy")
+        np.save(scale_path, [x_min, y_min, x_max, y_max])
+        from PIL import Image
+        img = Image.new("RGB",(200,200),(255,255,255))
+        bgimg_path = os.path.join(self.data_provider.model_path, "Epoch_{}".format(epoch), "bgimg.png")
+
+        img.save(bgimg_path)
+        
     
     def savefig(self, epoch, path="vis"):
         

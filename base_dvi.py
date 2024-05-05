@@ -180,8 +180,12 @@ class UmapLoss(nn.Module):
         )
         probabilities_distance = probabilities_distance.to(self.DEVICE)
 
+        # probabilities_graph = torch.cat(
+        #     (torch.ones(batch_size).to(self.DEVICE), torch.zeros(neg_num).to(self.DEVICE)), dim=0,
+        # )
+
         probabilities_graph = torch.cat(
-            (torch.ones(batch_size).to(self.DEVICE), torch.zeros(neg_num).to(self.DEVICE)), dim=0,
+            (probs.to(self.DEVICE), torch.zeros(neg_num).to(self.DEVICE)), dim=0,
         )
 
         probabilities_graph = probabilities_graph.to(device=self.DEVICE)
@@ -246,6 +250,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         prev_data = prev_data.reshape(prev_data.shape[0],prev_data.shape[1])
         curr_data = data_provider.train_representation(iteration)
         curr_data = curr_data.reshape(curr_data.shape[0],curr_data.shape[1])
+        print(prev_data.shape, curr_data.shape)
         t_1= time.time()
         npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
         t_2= time.time()
@@ -279,6 +284,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
 
 
     pred_list = data_provider.get_pred(iteration, feature_vectors)
+    # pred_list = np.zeros(feature_vectors.shape)
     dataset = VisDataHandler(edge_to, edge_from, feature_vectors, attention, probs,pred_list)
 
     n_samples = int(np.sum(S_N_EPOCHS * probs) // 1)
@@ -312,8 +318,23 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
     for param in prev_model.parameters():
         param.requires_grad = False
     w_prev = dict(prev_model.named_parameters())
-    
 
+# for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
+#     train_data = data_provider.train_representation(iteration)
+#     train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+#     emb = projector.batch_project(iteration, train_data)
+#     inv = projector.batch_inverse(iteration, emb)
+#     save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(iteration))
+#     train_data_loc = os.path.join(save_dir, "embedding.npy")
+#     np.save(train_data_loc, emb)
+# #     inv_loc = os.path.join(save_dir, "inv.npy")
+# #     np.save(inv_loc, inv)
+# #     cluster_rep_loc = os.path.join(save_dir, "cluster_centers.npy")
+# #     cluster_rep = np.load(cluster_rep_loc)
+# #     emb = projector.batch_project(iteration, cluster_rep)
+# #     inv = projector.batch_inverse(iteration, emb)
+# #     inv_loc = os.path.join(save_dir, "inv_cluster.npy")
+# #     np.save(inv_loc, inv)
 ########################################################################################################################
 #                                                      VISUALIZATION                                                   #
 ########################################################################################################################
@@ -327,6 +348,7 @@ if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     vis.savefig(i, path=os.path.join(save_dir, "{}_{}_{}_{}.png".format(DATASET, i, VIS_METHOD,now)))
+    # vis.get_background(i, 200)
 
 # emb = projector.batch_project(data_provider)
 

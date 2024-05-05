@@ -496,7 +496,22 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             param.requires_grad = False
         w_prev = dict(prev_model.named_parameters())
         
-
+# for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
+#     train_data = data_provider.train_representation(iteration)
+#     train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+#     emb = projector.batch_project(iteration, train_data)
+#     inv = projector.batch_inverse(iteration, emb)
+#     save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(iteration))
+#     train_data_loc = os.path.join(save_dir, "embedding.npy")
+    # np.save(train_data_loc, emb)
+    # inv_loc = os.path.join(save_dir, "inv.npy")
+    # np.save(inv_loc, inv)
+    # cluster_rep_loc = os.path.join(save_dir, "cluster_centers.npy")
+    # cluster_rep = np.load(cluster_rep_loc)
+    # emb = projector.batch_project(iteration, cluster_rep)
+    # inv = projector.batch_inverse(iteration, emb)
+    # inv_loc = os.path.join(save_dir, "inv_cluster.npy")
+    # np.save(inv_loc, inv)
 ########################################################################################################################
 #                                                      VISUALIZATION                                                   #
 ########################################################################################################################
@@ -510,6 +525,7 @@ if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     vis.savefig(i, path=os.path.join(save_dir, "{}_{}_{}_{}.png".format(DATASET, i, VIS_METHOD,now)))
+    # vis.get_background(i, 200)
 
 # emb = projector.batch_project(data_provider)
 
@@ -523,3 +539,8 @@ evaluator = Evaluator(data_provider, projector)
 Evaluation_NAME = '{}_eval'.format(VIS_MODEL_NAME)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     evaluator.save_epoch_eval(i, 15, temporal_k=5, file_name="{}".format(Evaluation_NAME))
+
+# temporal_train = evaluator.eval_temporal_local_corr_train(2,1)
+# temporal_test = evaluator.eval_temporal_local_corr_test(2,1)
+# print(temporal_train)
+# print(temporal_test)
