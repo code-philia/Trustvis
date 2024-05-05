@@ -10,6 +10,30 @@ from pynndescent import NNDescent
 from sklearn.neighbors import KDTree
 from sklearn.metrics import pairwise_distances
 from scipy import stats as stats
+from sklearn.neighbors import NearestNeighbors
+
+def _construct_fuzzy_complex(train_data, metric="euclidean"):
+    # """
+    # construct a vietoris-rips complex
+    # """
+    # number of trees in random projection forest
+    n_trees = min(64, 5 + int(round((train_data.shape[0]) ** 0.5 / 20.0)))
+    # max number of nearest neighbor iters to perform
+    n_iters = max(5, int(round(np.log2(train_data.shape[0]))))
+    # distance metric
+    # # get nearest neighbors
+    
+    nnd = NNDescent(
+        train_data,
+        n_neighbors=15,
+        metric=metric,
+        n_trees=n_trees,
+        n_iters=n_iters,
+        max_candidates=60,
+        verbose=True
+    )
+    knn_indices, knn_dists = nnd.neighbor_graph
+    return knn_indices
 
 def mixup_bi(model, image1, image2, label, target_cls, device, diff=0.1, max_iter=8, l_bound=0.8):
     '''Get BPs based on mixup method, fast
@@ -396,4 +420,150 @@ def ranking_dist(a,b):
     return ndisordered / (n * (n - 1))
 
 
+# def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.3,resolution=200,k_neibour=15,max_refine=5000):
+#     train_data = data_provider.train_representation(epoch)
+#     train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+#     pred = data_provider.get_pred(epoch, train_data)
+#     pred_res = pred.argmax(axis=1)
+#     sort_preds = np.sort(pred, axis=1)
+#     diff = (sort_preds[:, -1] - sort_preds[:, -2]) / (sort_preds[:, -1] - sort_preds[:, 0])
+#     print("get org pred")
+#     emb = projector.batch_project(epoch,train_data)
+#     inv = projector.batch_inverse(epoch, emb)
+#     inv_pred = data_provider.get_pred(epoch, inv)
+#     inv_pred_res = inv_pred.argmax(axis=1)
+#     inv_sort_preds = np.sort(inv_pred, axis=1)
+#     inv_diff = (inv_sort_preds[:, -1] - inv_sort_preds[:, -2]) / (inv_sort_preds[:, -1] - inv_sort_preds[:, 0])
+#     print("get inv pred")
+#     conf_error = []
+#     diff_values=[]
+#     for i in range(len(diff)):
+#         abs_diff = abs(diff[i] - inv_diff[i])
+#         if abs_diff > threshold or pred_res[i]!=inv_pred_res[i]:
+#             conf_error.append(i)
+#             diff_values.append((abs_diff, pred_res[i] != inv_pred_res[i]))
+#     print("real conf_error number:",len(conf_error),resolution)
+#     # Combine indices with their respective differences and whether prediction differed
+#     indexed_diff = list(zip(conf_error, diff_values))
+#     # Sort primarily by whether predictions are different (True first), then by differences in descending order
+#     indexed_diff.sort(key=lambda x: (~x[1][1], -x[1][0]))
+#     # Select the first max_refine if there are more than 5000 elements
+#     if len(indexed_diff) > max_refine:
+#         indexed_diff = indexed_diff[:max_refine]
+     
+#     cof_error_emb = emb[conf_error]
+#     grids = vis.get_grid(epoch, resolution)
+#     inv_grid = projector.batch_inverse(epoch, grids)
+#     print("conf_error number:",len(conf_error),resolution)
+#     """
+#         for each conf_error point, we calculate its k nearest low dimensional grids as negative anchors
+#     """
+#     diff = cof_error_emb[:, np.newaxis, :] - grids[np.newaxis, :, :]
+#     dist_squared = np.sum(diff**2, axis=2)
+#     k = k_neibour # Number of nearest neighbors to find
+#     # Find the indices of the 10 nearest neighbors for each sample in cof_error_emb
+#     nearest_neighbor_indices = np.argpartition(dist_squared, k, axis=1)[:, :k]
+#     ##### os the 2d embedding's nearest 15 neibour should be used as negative samples
+#     neg_grids = grids[nearest_neighbor_indices]
+#     print("negative pairs:",neg_grids.shape)
+    
+#     """
+#         for each conf_error point, we calculate its k nearest high dimensional grids as positive anchors
+#     """
+#     org_data = train_data[conf_error]
+#     # from sklearn.neighbors import NearestNeighbors
+#     high_neigh = NearestNeighbors(n_neighbors=k_neibour, radius=0.4)
+#     high_neigh.fit(inv_grid)
+#     _, knn_indices = high_neigh.kneighbors(org_data, n_neighbors=15, return_distance=True)
+#     pos_grids = grids[knn_indices]
+#     print("positive pairs:",pos_grids.shape)
+    
+#     return conf_error, neg_grids, pos_grids
 
+
+def get_confidence_error_pairs(data_provider, epoch, projector, vis,threshold=0.3,resolution=200,k_neibour=15,max_refine=5000, high_r=1000):
+    train_data = data_provider.train_representation(epoch)
+    train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+    pred = data_provider.get_pred(epoch, train_data)
+    pred_res = pred.argmax(axis=1)
+    sort_preds = np.sort(pred, axis=1)
+    diff = (sort_preds[:, -1] - sort_preds[:, -2]) / (sort_preds[:, -1] - sort_preds[:, 0])
+    # print("get org pred")
+    emb = projector.batch_project(epoch,train_data)
+    inv = projector.batch_inverse(epoch, emb)
+    inv_pred = data_provider.get_pred(epoch, inv)
+    inv_pred_res = inv_pred.argmax(axis=1)
+    inv_sort_preds = np.sort(inv_pred, axis=1)
+    inv_diff = (inv_sort_preds[:, -1] - inv_sort_preds[:, -2]) / (inv_sort_preds[:, -1] - inv_sort_preds[:, 0])
+    # print("get inv pred")
+    conf_error = []
+    diff_values=[]
+    for i in range(len(diff)):
+        abs_diff = abs(diff[i] - inv_diff[i])
+        if abs_diff > threshold or pred_res[i]!=inv_pred_res[i]:
+            conf_error.append(i)
+            diff_values.append((abs_diff, pred_res[i] != inv_pred_res[i]))
+    print("real conf_error number:",len(conf_error),resolution)
+    # Combine indices with their respective differences and whether prediction differed
+    indexed_diff = list(zip(conf_error, diff_values))
+    # Sort primarily by whether predictions are different (True first), then by differences in descending order
+    # Sort primarily by whether predictions are different (True first, use ~ to invert for sorting), then by differences in descending order
+    indexed_diff.sort(key=lambda x: (~x[1][1], -x[1][0]))
+
+    # Select the first max_refine if there are more than 5000 elements
+    if len(indexed_diff) > max_refine:
+        indexed_diff = indexed_diff[:max_refine]
+     
+    cof_error_emb = emb[conf_error]
+    grids = vis.get_grid(epoch, resolution)
+    a,b,c,d=vis.get_epoch_plot_measures(epoch)
+    print("a,b,c,d",a,b,c,d)
+    inv_grid = projector.batch_inverse(epoch, grids)
+    # print("conf_error number:",len(conf_error),resolution)
+    """
+        for each conf_error point, we calculate its k nearest low dimensional grids as negative anchors
+    """
+    diff = cof_error_emb[:, np.newaxis, :] - grids[np.newaxis, :, :]
+    dist_squared = np.sum(diff**2, axis=2)
+    k = k_neibour # Number of nearest neighbors to find
+    # Find the indices of the 10 nearest neighbors for each sample in cof_error_emb
+    nearest_neighbor_indices = np.argpartition(dist_squared, k, axis=1)[:, :k]
+    ##### os the 2d embedding's nearest 15 neibour should be used as negative samples
+    neg_grids = grids[nearest_neighbor_indices]
+    print("negative pairs:",neg_grids.shape)
+    """
+        for each conf_error point, we calculate its k nearest high dimensional grids as positive anchors
+    """
+    # inv_grid_pred = data_provider.get_pred(epoch, inv_grid)
+    org_data = train_data[conf_error]
+    # pred_for_conf_err = pred[conf_error]
+    # from sklearn.neighbors import NearestNeighbors
+    high_neigh = NearestNeighbors(n_neighbors=15, radius=0.4)
+    high_neigh_ = NearestNeighbors(n_neighbors=15, radius=0.4)
+    high_neigh_.fit(org_data)
+    high_neigh.fit(inv_grid)
+    _, knn_indices = high_neigh.kneighbors(org_data, n_neighbors=high_r, return_distance=True)
+    _, knn_indices_ = high_neigh_.kneighbors(org_data, n_neighbors=2, return_distance=True)
+    nearest_grids = grids[knn_indices] #### 2d grids sampe nearest neibour  N * 15 * 2
+    org_emb_ = emb[knn_indices_] #### 2d training sampe nearest neibour  N * 1 * 2
+    pos_grids = []
+    distance_list = []
+    for i in range(len(conf_error)):
+        min_distance = float('inf')
+        min_point =None
+        train_point = org_emb_[i][1] # #TODO 2d point
+        grid_N_emb = nearest_grids[i] # 15*2
+        for grid_point in grid_N_emb:
+            distance = np.linalg.norm(train_point - grid_point)
+            if distance < min_distance:
+                min_distance = distance
+                min_point = grid_point
+        distance_list.append(min_distance)
+        pos_grids.append([min_point])
+        
+        
+    pos_grids = np.array(pos_grids)   
+    print("positive pairs:",pos_grids.shape)
+    return conf_error, neg_grids, pos_grids,distance_list
+
+    

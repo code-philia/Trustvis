@@ -308,52 +308,16 @@ top_indices = top_indices.tolist()
 
 sim_list = list(set(top_indices) - set(difference_list))
 
-# print("neighbor overlap", len(set(tar_vis_error_list).intersection(set(knn_indices_flat) - set(critical_list))))
-# print("critical overlap", len(set(tar_vis_error_list).intersection(set(high_dim_prediction_flip_list).union(set(high_dim_border_flip_list)))))
-# print("tar_vis_error_list_ overlap", len(set(tar_vis_error_list).intersection(set(tar_vis_error_list_))))
-# # print("tar vis error critical overlap", len(set(tar_vis_error_list).intersection(set(ref_vis_error_list))))
-# print("difference_list overlap", len(set(tar_vis_error_list).intersection(set(difference_list))))
-# print("sim_list overlap", len(set(tar_vis_error_list).intersection(set(sim_list))))
-# print("tar vis error critical overlap", len(set(ref_vis_error_list).intersection(set(tar_vis_error_list_))))
-# print("tar vis error critical overlap", len((set(ref_vis_error_list).intersection(set(tar_vis_error_list_))).intersection(set(tar_vis_error_list))))
-# print("tar vis error critical overlap", len(set(tar_vis_error_list) - set(difference_list)))
-
-# print("ref vis error overlap", set(ref_vis_error_list).intersection(set(high_dim_border_flip_list)))
-# print("tar vis error overlap", set(tar_vis_error_list).intersection(set(high_dim_border_flip_list)))
-# if REF_EPOCH > 70:
-#     print(prediction_flip)
-#     print(high_dim_prediction_flip_list)
-#     print(border_flip)
-#     print(high_dim_border_flip_list)
-#     print(ref_border_list_value)
-#     print(tar_border_list_value)
-#     print(ref_border_list[high_dim_border_flip_list])
-#     print(tar_border_list[high_dim_border_flip_list])
 
 ref_border_indices = [i for i, value in enumerate(high_ref_border_list) if value == 1.0]
-# print(ref_border_indices)
 ref_border_flip = list(set(ref_border_indices).intersection(set(high_dim_border_flip_list)))
 
 critical_border_flip_train_data = ref_train_data[ref_border_flip]
 critical_border_flip_pred = pred[ref_border_flip]
 
-# from singleVis.visualizer import visualizer
-# vis = visualizer(data_provider, projector, 200)
-# save_dir = os.path.join(data_provider.content_path, "imgTempo_")
-# if not os.path.exists(save_dir):
-#     os.mkdir(save_dir)
-# print(len(high_dim_border_flip_list))
-# # vis.savefig_cus(epoch, ref_train_data, pred, pred, path=os.path.join(save_dir, "{}_{}_{}.png".format(VIS_MODEL_NAME, epoch, "191_tempo_grad")))
-# # vis.savefig_cus(REF_EPOCH, critical_prediction_flip_train_data, critical_prediction_flip_pred, critical_prediction_flip_pred, path=os.path.join(save_dir, "{}_{}_{}.png".format(VIS_MODEL_NAME, REF_EPOCH, "191_tempo_grad_critical_prediction_all")))
-# vis.savefig_cus(REF_EPOCH, critical_border_flip_train_data, critical_border_flip_pred, critical_border_flip_pred, path=os.path.join(save_dir, "{}_{}_{}.png".format(VIS_MODEL_NAME, REF_EPOCH, "border")))
-
 ref_border_indices = [i for i, value in enumerate(high_tar_border_list) if value == 1.0]
-# print(ref_border_indices)
-ref_border_flip = list(set(ref_border_indices).intersection(set(high_dim_border_flip_list)))
 
-# critical_border_flip_train_data = tar_train_data[ref_border_flip]
-# critical_border_flip_pred = pred[ref_border_flip]
-# vis.savefig_cus(TAR_EPOCH, critical_border_flip_train_data, critical_border_flip_pred, critical_border_flip_pred, path=os.path.join(save_dir, "{}_{}_{}.png".format(VIS_MODEL_NAME, TAR_EPOCH, "border")))
+ref_border_flip = list(set(ref_border_indices).intersection(set(high_dim_border_flip_list)))
 
 testing_data  = data_provider.test_representation(TAR_EPOCH)
 testing_data = testing_data.reshape(testing_data.shape[0],testing_data.shape[1])
@@ -391,11 +355,6 @@ for i in range(len(ref_testpred)):
     if ref_testpred[i] != ref_new_testpred[i]:
         tar_vis_error_list.append(i)
 
-# print(len(ref_vis_error_list))
-# file_path = '/home/yiming/trustvis/ref_vis_error.json'
-# with open(file_path, 'w') as file:
-#     json.dump(tar_vis_error_list, file)
-# print(len(tar_vis_error_list))
 
 high_dim_prediction_flip_list, high_critical_prediction_flip_from_list, high_critical_prediction_flip_to_list = critical_prediction_flip(ref_testpred, testpred)
 low_dim_prediction_flip_list, low_critical_prediction_flip_from_list, low_critical_prediction_flip_to_list= critical_prediction_flip(ref_new_testpred, new_testpred)

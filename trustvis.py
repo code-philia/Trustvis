@@ -16,15 +16,15 @@ from umap.umap_ import find_ab_params
 
 from singleVis.custom_weighted_random_sampler import CustomWeightedRandomSampler
 from singleVis.SingleVisualizationModel import VisModel
-from singleVis.losses import UmapLoss, ReconstructionLoss, DVILoss, DummyTemporalLoss
+from singleVis.losses import UmapLoss, UmapLoss_refine_conf, ReconstructionLoss, DVILoss, DummyTemporalLoss
 from singleVis.edge_dataset import VisDataHandler
 from singleVis.trainer import VISTrainer
 from singleVis.eval.evaluator import Evaluator
 from singleVis.data import NormalDataProvider
 from trustVis.sampeling import CriticalSampling
+from singleVis.visualizer import visualizer
 from singleVis.spatial_edge_constructor import Trustvis_SpatialEdgeConstructor, TrustvisTemporalSpatialEdgeConstructor
-
-from singleVis.utils import _construct_fuzzy_complex
+from singleVis.utils import _construct_fuzzy_complex, get_confidence_error_pairs
 
 from singleVis.projector import VISProjector
 
@@ -100,12 +100,12 @@ DECODER_DIMS = VISUALIZATION_PARAMETER["DECODER_DIMS"]
 S_N_EPOCHS = VISUALIZATION_PARAMETER["S_N_EPOCHS"]
 N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
-MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
-VIS_MODEL_NAME = 'trustvis_tempo' ### saved_as VIS_MODEL_NAME.pth
-
+MAX_EPOCH = 10
+MAX_EPOCH_ = 1
+VIS_MODEL_NAME = 'trustvis' ### saved_as VIS_MODEL_NAME.pth
 
 # Define hyperparameters
-GPU_ID = 0
+GPU_ID = 1
 DEVICE = torch.device("cuda:{}".format(GPU_ID) if torch.cuda.is_available() else "cpu")
 print("device", DEVICE)           
 
@@ -162,6 +162,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
         else:
             recon_loss_fn = ReconstructionLoss(beta=1.0)
             umap_loss_fn = UmapLoss(negative_sample_rate, DEVICE, data_provider, iteration,net, 100, _a, _b,  repulsion_strength=1.0)
+       
             c_sampling = CriticalSampling(projector,data_provider,iteration,DEVICE)
             ref_train_data, tar_train_data, pred_origin, pred, inv_pred_origin, inv_pred,new_pred,new_pred_origin, inv_new_pred = c_sampling.get_basic()
             if temporal_k == 2:
@@ -207,12 +208,7 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             t_1= time.time()
             # npr = torch.tensor(find_neighbor_preserving_rate(prev_data, curr_data, N_NEIGHBORS)).to(DEVICE)
             t_2= time.time()
-
-
         print('complex-construct:', t1-t0)
-
-
-
         pred_list = data_provider.get_pred(iteration, feature_vectors)
         dataset = VisDataHandler(edge_to, edge_from, feature_vectors, attention, pred_probs,pred_list)
         
@@ -222,28 +218,40 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             sampler = CustomWeightedRandomSampler(pred_probs, n_samples, replacement=True)
         else:
             sampler = WeightedRandomSampler(pred_probs, n_samples, replacement=True)
-
         edge_loader = DataLoader(dataset, batch_size=2000, sampler=sampler, num_workers=8, prefetch_factor=10)
         
 
         ########################################################################################################################
         #                                                       TRAIN                                                          #
         ########################################################################################################################
-
-        # trainer = DVITrainer(model, criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
-        
         trainer = VISTrainer(model,criterion, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
 
         t2=time.time()
-        trainer.train(PATIENT, MAX_EPOCH,data_provider,iteration)
-        # trainer.train(PATIENT, MAX_EPOCH)
+        
+        trainer.train(PATIENT, MAX_EPOCH,data_provider,iteration,False,False)
         t3 = time.time()
-        print('training:', t3-t2)
-        # save result
-        save_dir = data_provider.model_path
-        trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "complex_construction", str(iteration), t1-t0)
-        trainer.record_time(save_dir, "time_{}".format(VIS_MODEL_NAME), "training", str(iteration), t3-t2)
+        print('training stage one:', t3-t2)
         save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(iteration))
+        trainer.save(save_dir=save_dir, file_name="{}".format(VIS_MODEL_NAME))
+        
+        t4 = time.time()
+        ##### start stage two
+
+        projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
+        vis = visualizer(data_provider, projector, 400, "tab10")
+        conf_error,neg_grids,pos_grids = get_confidence_error_pairs(data_provider,iteration,projector,vis,0.2,400)
+        print("conf_error number:", len(conf_error))
+        
+        umap_loss_fn = UmapLoss_refine_conf(negative_sample_rate, DEVICE, data_provider, iteration,net, conf_error, neg_grids,pos_grids,100, _a, _b,  repulsion_strength=1.0)
+        criterion_ = DVILoss(umap_loss_fn, recon_loss_fn, temporal_loss_fn, lambd1=3*LAMBDA1, lambd2=0.0,device=DEVICE)
+        trainer_ = VISTrainer(model, criterion_, optimizer, lr_scheduler, edge_loader=edge_loader, DEVICE=DEVICE)
+        trainer_.train(PATIENT, MAX_EPOCH_,data_provider,iteration,True,False)
+        t5 = time.time()
+        # save result
+        print('training stage two:', t5-t4)
+        trainer.record_time(data_provider.model_path, "time_{}".format(VIS_MODEL_NAME), "complex_construction", str(iteration), t1-t0)
+        trainer.record_time(data_provider.model_path, "time_{}".format(VIS_MODEL_NAME), "training_1", str(iteration), t3-t2)
+        trainer.record_time(data_provider.model_path, "time_{}".format(VIS_MODEL_NAME), "training_2", str(iteration), t5-t4)
         trainer.save(save_dir=save_dir, file_name="{}".format(VIS_MODEL_NAME))
 
         print("Finish epoch {}...".format(iteration))
@@ -253,27 +261,10 @@ for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
             param.requires_grad = False
         w_prev = dict(prev_model.named_parameters())
         
-# for iteration in range(EPOCH_START, EPOCH_END+EPOCH_PERIOD, EPOCH_PERIOD):
-#     train_data = data_provider.train_representation(iteration)
-#     train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
-#     emb = projector.batch_project(iteration, train_data)
-#     inv = projector.batch_inverse(iteration, emb)
-#     save_dir = os.path.join(data_provider.model_path, "Epoch_{}".format(iteration))
-#     train_data_loc = os.path.join(save_dir, "embedding.npy")
-    # np.save(train_data_loc, emb)
-    # inv_loc = os.path.join(save_dir, "inv.npy")
-    # np.save(inv_loc, inv)
-    # cluster_rep_loc = os.path.join(save_dir, "cluster_centers.npy")
-    # cluster_rep = np.load(cluster_rep_loc)
-    # emb = projector.batch_project(iteration, cluster_rep)
-    # inv = projector.batch_inverse(iteration, emb)
-    # inv_loc = os.path.join(save_dir, "inv_cluster.npy")
-    # np.save(inv_loc, inv)
+
 ########################################################################################################################
 #                                                      VISUALIZATION                                                   #
 ########################################################################################################################
-
-from singleVis.visualizer import visualizer
 now = time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime(time.time())) 
 
 vis = visualizer(data_provider, projector, 200, "tab10")
@@ -283,7 +274,6 @@ if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     vis.savefig(i, path=os.path.join(save_dir, "{}_{}_{}_{}.png".format(DATASET, i, VIS_METHOD,now)))
-    # vis.get_background(i, 200)
 
 ########################################################################################################################
 #                                                       EVALUATION                                                     #
@@ -294,8 +284,3 @@ evaluator = Evaluator(data_provider, projector)
 Evaluation_NAME = '{}_eval'.format(VIS_MODEL_NAME)
 for i in range(EPOCH_START, EPOCH_END+1, EPOCH_PERIOD):
     evaluator.save_epoch_eval(i, 15, temporal_k=5, file_name="{}".format(Evaluation_NAME))
-
-# temporal_train = evaluator.eval_temporal_local_corr_train(2,1)
-# temporal_test = evaluator.eval_temporal_local_corr_test(2,1)
-# print(temporal_train)
-# print(temporal_test)

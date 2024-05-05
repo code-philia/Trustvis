@@ -42,15 +42,9 @@ VIS_METHOD = "DVI" # DeepVisualInsight
 
 parser = argparse.ArgumentParser(description='Process hyperparameters...')
 
-# get workspace dir
-current_path = os.getcwd()
-
-parent_path = os.path.dirname(current_path)
-
-new_path = os.path.join(parent_path, 'training_dynamic')
 
 
-parser.add_argument('--content_path', type=str,default=new_path)
+parser.add_argument('--content_path', type=str)
 parser.add_argument('--start', type=int,default=1)
 parser.add_argument('--end', type=int,default=3)
 parser.add_argument('--epoch' , type=int, default=3)
@@ -105,6 +99,7 @@ S_N_EPOCHS = VISUALIZATION_PARAMETER["S_N_EPOCHS"]
 N_NEIGHBORS = VISUALIZATION_PARAMETER["N_NEIGHBORS"]
 PATIENT = VISUALIZATION_PARAMETER["PATIENT"]
 MAX_EPOCH = VISUALIZATION_PARAMETER["MAX_EPOCH"]
+MAX_EPOCH = 6
 # MAX_EPOCH = 1
 VIS_MODEL_NAME = 'base_dvi' ### saved_as VIS_MODEL_NAME.pth
 

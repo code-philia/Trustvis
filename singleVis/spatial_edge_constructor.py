@@ -443,6 +443,10 @@ class Trustvis_SpatialEdgeConstructor(SpatialEdgeConstructor):
         """
         train_data = self.data_provider.train_representation(self.iteration)
         train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+        # adv_data = np.load(os.path.join(self.data_provider.model_path, 'Epoch_{}'.format(self.iteration),'adv_rep.npy'))
+        # adv_data = adv_data.reshape(adv_data.shape[0],train_data.shape[1])
+        # train_data = np.concatenate((train_data,adv_data ),axis=0)
+        print("train data",train_data.shape)
         if self.b_n_epochs > 0:
             border_centers = self.data_provider.border_representation(self.iteration).squeeze()
             
@@ -1897,6 +1901,8 @@ class TrustvisTemporalSpatialEdgeConstructor(SpatialEdgeConstructor):
             baseline complex constructor
         """
         train_data = self.data_provider.train_representation(self.iteration)
+        # adv_data = np.load()
+     
         train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
 
         # complex, _, _, _ = self._construct_fuzzy_complex(self.diff_data)

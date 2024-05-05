@@ -6,7 +6,7 @@ import json
 from tqdm import tqdm
 import torch
 
-
+from singleVis.visualizer import visualizer
 from singleVis.eval.evaluator import Evaluator
 import sys
 sys.path.append('..')
@@ -16,7 +16,7 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
 torch.manual_seed(0)  # fixed seed
 torch.cuda.manual_seed_all(0)
-
+from singleVis.utils import get_confidence_error_pairs
 """
 1. construct a spatio-temporal complex
 2. construct an edge-dataset
@@ -387,7 +387,7 @@ class VISTrainer(SingleVisTrainer):
         super().__init__(model, criterion, optimizer, lr_scheduler, edge_loader, DEVICE)
     
     
-    def train_step(self,data_provider,iteration,epoch):
+    def train_step(self,data_provider,iteration,epoch,ifFreeze, interval):
         
         projector = PROCESSProjector(self.model, data_provider.content_path, '', self.DEVICE)
         evaluator = Evaluator(data_provider, projector)
@@ -396,19 +396,43 @@ class VISTrainer(SingleVisTrainer):
 
         self.model = self.model.to(device=self.DEVICE)
         self.model.train()
+        if ifFreeze:
+            for name, param in self.model.named_parameters():
+                param.requires_grad = True
+            if interval:
+                # Determine component to freeze based on whether the epoch is even or odd
+                component_to_freeze = 'decoder' if epoch % 2 == 0 else 'encoder'
+                print("interval freeze: {}".format(component_to_freeze))
+                for name, param in self.model.named_parameters():
+                    if component_to_freeze in name:
+                        param.requires_grad = False
+                    # print(f"Freezing {component_to_freeze}")
+            else:
+                print("freeze decoder only")
+                # Default behavior (original freezing logic can be placed here)
+                for name, param in self.model.named_parameters():
+                    if 'decoder' in name:
+                        # print("freezed")
+                        param.requires_grad = False
         all_loss = []
         umap_losses = []
         recon_losses = []
         temporal_losses = []
         new_losses = []
+        
+        
 
         t = tqdm(self.edge_loader, leave=True, total=len(self.edge_loader))
 
         train_data = data_provider.train_representation(iteration)
         train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+  
 
         recon_train_data = self.model(torch.Tensor(train_data).to(self.DEVICE), torch.Tensor(train_data).to(self.DEVICE))['recon'][0]
         recon_pred = data_provider.get_pred(iteration, recon_train_data.detach().cpu().numpy())
+        # if ifFreeze:
+        #     vis = visualizer(data_provider, projector, 200, "tab10")
+        #     conf_error,neg_grids,pos_grids = get_confidence_error_pairs(data_provider,iteration,projector,vis,0.2)
 
         for data in t:
             edge_to_idx, edge_from_idx, edge_to, edge_from, a_to, a_from,probs,pred_edge_to, pred_edge_from = data
@@ -445,13 +469,13 @@ class VISTrainer(SingleVisTrainer):
                                                                 sum(all_loss) / len(all_loss)))
         return self.loss
     
-    def train(self, PATIENT, MAX_EPOCH_NUMS, data_provider, iteration):
+    def train(self, PATIENT, MAX_EPOCH_NUMS, data_provider, iteration, ifFreeze=False, interval=False):
         patient = PATIENT
         time_start = time.time()
         for epoch in range(MAX_EPOCH_NUMS):
             print("====================\nepoch:{}\n===================".format(epoch+1))
             prev_loss = self.loss
-            loss = self.train_step(data_provider, iteration,epoch)
+            loss = self.train_step(data_provider, iteration,epoch, ifFreeze, interval)
             self.lr_scheduler.step()
             # early stop, check whether converge or not
             if prev_loss - loss < 5E-3:

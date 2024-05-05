@@ -206,7 +206,7 @@ _a, _b = find_ab_params(1.0, min_dist)
 projector = VISProjector(vis_model=model, content_path=CONTENT_PATH, vis_model_name=VIS_MODEL_NAME, device=DEVICE)
 
 
-start_flag = 0
+start_flag = 1
 
 prev_model = VisModel(ENCODER_DIMS, DECODER_DIMS)
 
