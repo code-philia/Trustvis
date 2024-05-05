@@ -200,3 +200,28 @@ def get_attention(model, data, device, temperature=.01, verbose=1):
     if verbose:
         print("Gradients calculation: {:.2f} seconds\tsoftmax with temperature: {:.2f} seconds".format(round(t1-t0), round(t2-t1)))
     return grad
+
+def get_attention_cluster(model, data, cluster_labels, cluster_rep, device, temperature=.01, verbose=1):
+    num_samples = len(data)
+    num_dimensions = data.shape[1]
+
+    attention_weights = torch.zeros((num_samples, num_dimensions), device=device)
+
+    for i in range(num_samples):
+        cluster1 = cluster_labels[i][0]  # 第一近聚类
+        cluster2 = cluster_labels[i][1]  # 第二近聚类
+
+        cluster1_center = cluster_rep[cluster1]
+        cluster2_center = cluster_rep[cluster2]
+
+        sample = data[i]
+
+        diff1 = torch.abs(torch.from_numpy(sample) - torch.from_numpy(cluster1_center))
+        diff2 = torch.abs(torch.from_numpy(sample) - torch.from_numpy(cluster2_center))
+
+        attention = 1 / (1 + diff1 + diff2)  # 综合考虑差异
+        attention_weights[i] = attention
+
+    attention_weights = softmax(attention_weights.detach().cpu().numpy()/temperature, axis=1)
+
+    return attention_weights

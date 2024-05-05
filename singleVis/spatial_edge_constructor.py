@@ -15,7 +15,7 @@ from sklearn.utils import check_random_state
 
 from singleVis.kcenter_greedy import kCenterGreedy
 from singleVis.intrinsic_dim import IntrinsicDim
-from singleVis.backend import get_graph_elements, get_attention
+from singleVis.backend import get_graph_elements, get_attention, get_attention_cluster
 from singleVis.utils import find_neighbor_preserving_rate
 import torch
 
@@ -348,9 +348,64 @@ class SingleEpochSpatialEdgeConstructor(SpatialEdgeConstructor):
             feature_vectors = np.copy(train_data)
             complex, _, _, _ = self._construct_fuzzy_complex(train_data)
             edge_to, edge_from, probs = self._construct_step_edge_dataset(complex, None)
+            # pred_model = self.data_provider.prediction_function(self.iteration)
+            # save_dir = os.path.join(self.data_provider.model_path, "Epoch_{}".format(self.iteration))
+            # cluster_loc = os.path.join(save_dir, "sample_labels.json")
+            # with open(cluster_loc, 'r') as file:
+            #     json_data = json.load(file)
+            # cluster_labels = json_data
+            # cluster_rep_loc = os.path.join(save_dir, "cluster_centers.npy")
+            # cluster_rep = np.load(cluster_rep_loc)
+            # attention = get_attention_cluster(pred_model, feature_vectors, cluster_labels, cluster_rep, temperature=.01, device=self.data_provider.DEVICE, verbose=1) 
+            attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)      
+            # attention = np.zeros(feature_vectors.shape)
+        else: 
+            raise Exception("Illegal border edges proposion!")
+            
+        return edge_to, edge_from, probs, feature_vectors, attention
+    def record_time(self, save_dir, file_name, operation, t):
+        file_path = os.path.join(save_dir, file_name+".json")
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                ti = json.load(f)
+        else:
+            ti = dict()
+        if operation not in ti.keys():
+            ti[operation] = dict()
+        ti[operation][str(self.iteration)] = t
+        with open(file_path, "w") as f:
+            json.dump(ti, f)
+
+class SingleEpochTextSpatialEdgeConstructor(SpatialEdgeConstructor):
+    def __init__(self, data_provider, iteration, s_n_epochs, b_n_epochs, n_neighbors,model) -> None:
+        super().__init__(data_provider, 100, s_n_epochs, b_n_epochs, n_neighbors)
+        self.iteration = iteration
+        self.model = model
+    
+    def construct(self):
+        """"
+            baseline complex constructor
+        """
+        train_data = self.data_provider.train_representation(self.iteration)
+        train_data = train_data.reshape(train_data.shape[0],train_data.shape[1])
+        if self.b_n_epochs > 0:
+            border_centers = self.data_provider.border_representation(self.iteration).squeeze()
+            
+            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+            ## str1
+            bw_complex, _, _, _ = self._construct_boundary_wise_complex(train_data, border_centers)
+
+            edge_to, edge_from, probs = self._construct_step_edge_dataset(complex, bw_complex)
+            feature_vectors = np.concatenate((train_data, border_centers ), axis=0)
             pred_model = self.data_provider.prediction_function(self.iteration)
             attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)            
             # attention = np.zeros(feature_vectors.shape)
+        elif self.b_n_epochs == 0:
+            feature_vectors = np.copy(train_data)
+            complex, _, _, _ = self._construct_fuzzy_complex(train_data)
+            edge_to, edge_from, probs = self._construct_step_edge_dataset(complex, None)
+            # attention = get_attention(pred_model, feature_vectors, temperature=.01, device=self.data_provider.DEVICE, verbose=1)      
+            attention = np.zeros(feature_vectors.shape)
         else: 
             raise Exception("Illegal border edges proposion!")
             
